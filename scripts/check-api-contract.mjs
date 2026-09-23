@@ -89,11 +89,26 @@ try {
     'testnet',
     'paymentToken',
     'contracts',
+    'erc8004',
+    'rpcUrls',
+    'nativeCurrency',
     'explorerBaseUrl',
     'fastPathMaxDisplay',
     'protocolFeeBps',
   ]);
   expectFields('/v1/network paymentToken', network.paymentToken, ['symbol', 'decimals', 'address']);
+  expectFields('/v1/network nativeCurrency', network.nativeCurrency, ['name', 'symbol', 'decimals']);
+
+  // The register page picks its ABI from this. Guessing sends a transaction
+  // that reverts, and on mainnet it pays gas to find out.
+  typeof network.erc8004?.referenceImplementation === 'boolean'
+    ? ok('/v1/network states which ERC-8004 registry ABI the chain has')
+    : fail('/v1/network erc8004.referenceImplementation is missing or not a boolean');
+
+  // A wallet cannot add Monad without one of these; it is in no default list.
+  Array.isArray(network.rpcUrls) && network.rpcUrls.length > 0
+    ? ok(`/v1/network offers ${network.rpcUrls.length} public RPC endpoint(s) a wallet can use`)
+    : fail('/v1/network returned no rpcUrls, so a wallet cannot add this chain');
 
   // The badge says "testnet" or "REAL FUNDS" from this one boolean. A string
   // here would be truthy either way, and the page would claim testnet safety

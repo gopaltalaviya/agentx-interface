@@ -27,6 +27,15 @@ export interface NetworkInfo {
   testnet: boolean;
   paymentToken: {symbol: string; decimals: number; address: string | null};
   contracts: Record<string, string>;
+  erc8004: {
+    identityRegistry?: string;
+    reputationRegistry?: string;
+    /** Reference registry takes register(uri, wallet); canonical takes register(uri). */
+    referenceImplementation: boolean;
+  };
+  /** PUBLIC endpoints. A wallet needs one to add Monad, which it has never seen. */
+  rpcUrls: string[];
+  nativeCurrency: {name: string; symbol: string; decimals: number};
   explorerBaseUrl: string | null;
   fastPathMaxDisplay: string;
   protocolFeeBps: number;
@@ -119,6 +128,14 @@ async function get<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+export interface RegisteredAgent {
+  agentId: number;
+  chainId: number;
+  walletAddress: string;
+  apiKey: string;
+  warning: string;
+}
+
 export const api = {
   network: () => get<NetworkInfo>('/v1/network'),
 
@@ -131,6 +148,33 @@ export const api = {
   agent: (agentId: number) => get<AgentSummary>(`/v1/agents/${agentId}`),
 
   run: (runId: string) => get<RunDetail>(`/v1/runs/${runId}`),
+
+  /**
+   * Create the AGENTX record for an agent.
+   *
+   * The API key comes back exactly once and is never recoverable, so the page
+   * must put it in front of the person before anything else can navigate away.
+   */
+  async register(body: {
+    name: string;
+    description?: string;
+    capabilities: string[];
+    pricePerTask: string;
+    walletAddress: string;
+    ownerAddress: string;
+    chainId: number;
+  }): Promise<RegisteredAgent> {
+    const res = await fetch(`${API_URL}/v1/agents`, {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const problem = (await res.json().catch(() => ({}))) as {code?: string; detail?: string};
+      throw new ApiError(problem.code ?? 'UNKNOWN', problem.detail ?? `registration failed (${res.status})`);
+    }
+    return (await res.json()) as RegisteredAgent;
+  },
 
   /**
    * Start a run.
