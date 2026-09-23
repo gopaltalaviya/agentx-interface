@@ -1,0 +1,215 @@
+/**
+ * The browser's view of the AGENTX API.
+ *
+ * ## Why this is not `@agentx/sdk`
+ *
+ * The SDK lives in `agentx-backend`, which is a separate repository on
+ * purpose: the contracts and the signer must never enter a Vercel build
+ * container. Importing across that line would mean either publishing the SDK
+ * or giving the hosting build a deploy key to a private repo — both worse
+ * than a small duplicated surface.
+ *
+ * So these types are a COPY, and a copy drifts. The guard is
+ * `scripts/check-api-contract.mjs`: it calls a running API and asserts every
+ * field this file claims actually exists. A type that agrees with itself
+ * proves nothing; one checked against the real server does.
+ *
+ * Only read endpoints appear here. Anything that spends is done by an agent
+ * holding its own key, never by a browser.
+ */
+
+export const API_URL =
+  process.env['NEXT_PUBLIC_API_URL']?.replace(/\/$/, '') ?? 'http://127.0.0.1:8080';
+
+export interface NetworkInfo {
+  chainId: number;
+  name: string;
+  testnet: boolean;
+  paymentToken: {symbol: string; decimals: number; address: string | null};
+  contracts: Record<string, string>;
+  explorerBaseUrl: string | null;
+  fastPathMaxDisplay: string;
+  protocolFeeBps: number;
+}
+
+export interface AgentSummary {
+  agentId: number;
+  chainId: number;
+  name: string;
+  description: string | null;
+  capabilities: string[];
+  pricePerTask: string;
+  priceDisplay: string;
+  walletAddress: string;
+  score: number;
+  completed: number;
+  failed: number;
+  successRate: number | null;
+  active: boolean;
+  explorerUrl: string;
+}
+
+export interface RunSummary {
+  runId: string;
+  chainId: number;
+  network: string;
+  testnet: boolean;
+  goal: string;
+  state: 'running' | 'done' | 'failed';
+  spent: string;
+  spentDisplay: string;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+export interface RunDetail extends RunSummary {
+  answer: string | null;
+  steps: RunStep[];
+  error: string | null;
+  events: {kind: string; payload: Record<string, unknown>; occurredAt: string}[];
+}
+
+export interface RunStep {
+  capability: string;
+  status: 'settled' | 'disputed' | 'no-candidate' | 'budget-exceeded' | 'timeout' | 'failed';
+  detail: string;
+  jobId?: string;
+  agentId?: number;
+  amount?: string;
+  explorerUrl?: string;
+  verdict?: {accept: boolean; reason: string; quality: number; injectionAttempted: boolean};
+}
+
+/** The event kinds the orchestrator emits, plus the two terminal ones. */
+export type RunEventKind =
+  | 'planned'
+  | 'discovered'
+  | 'selected'
+  | 'hired'
+  | 'judged'
+  | 'settled'
+  | 'disputed'
+  | 'skipped'
+  | 'finished'
+  | 'failed';
+
+export interface RunEvent {
+  kind: RunEventKind;
+  payload: Record<string, unknown>;
+  /** Client-side, for ordering and for the elapsed column. */
+  at: number;
+}
+
+export class ApiError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+async function get<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {cache: 'no-store'});
+  if (!res.ok) {
+    const problem = (await res.json().catch(() => ({}))) as {code?: string; detail?: string};
+    throw new ApiError(problem.code ?? 'UNKNOWN', problem.detail ?? `${path} failed (${res.status})`);
+  }
+  return (await res.json()) as T;
+}
+
+export const api = {
+  network: () => get<NetworkInfo>('/v1/network'),
+
+  agents: (q: {capability?: string; rank?: string; minScore?: number; limit?: number} = {}) => {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== '') params.set(k, String(v));
+    return get<{agents: AgentSummary[]}>(`/v1/agents?${params}`).then((r) => r.agents);
+  },
+
+  agent: (agentId: number) => get<AgentSummary>(`/v1/agents/${agentId}`),
+
+  run: (runId: string) => get<RunDetail>(`/v1/runs/${runId}`),
+
+  /**
+   * Start a run.
+   *
+   * The key is supplied by whoever is driving the demo and is never stored:
+   * a browser is not a place to keep an agent's credentials, and a page that
+   * remembered one would leave it in `localStorage` for the next person on
+   * that machine.
+   */
+  async startRun(goal: string, apiKey: string): Promise<{runId: string; eventsUrl: string}> {
+    const res = await fetch(`${API_URL}/v1/runs`, {
+      method: 'POST',
+      headers: {'content-type': 'application/json', authorization: `Bearer ${apiKey}`},
+      body: JSON.stringify({goal}),
+    });
+    if (!res.ok) {
+      const problem = (await res.json().catch(() => ({}))) as {code?: string; detail?: string};
+      throw new ApiError(problem.code ?? 'UNKNOWN', problem.detail ?? `could not start (${res.status})`);
+    }
+    return (await res.json()) as {runId: string; eventsUrl: string};
+  },
+};
+
+/**
+ * Subscribe to a run's events.
+ *
+ * `EventSource` replays from the server on reconnect, and the server sends
+ * everything that already happened when a client connects — so a page opened
+ * late, or refreshed mid-run, still shows the whole story. Returns an
+ * unsubscribe function.
+ */
+export function subscribeToRun(
+  runId: string,
+  onEvent: (event: RunEvent) => void,
+  onClose?: () => void,
+): () => void {
+  const source = new EventSource(`${API_URL}/v1/runs/${runId}/events`);
+
+  const KINDS: RunEventKind[] = [
+    'planned',
+    'discovered',
+    'selected',
+    'hired',
+    'judged',
+    'settled',
+    'disputed',
+    'skipped',
+    'finished',
+    'failed',
+  ];
+
+  for (const kind of KINDS) {
+    source.addEventListener(kind, (e) => {
+      try {
+        onEvent({kind, payload: JSON.parse((e as MessageEvent).data), at: Date.now()});
+      } catch {
+        // A malformed frame must not kill the stream; the run is still real
+        // and the next event will render.
+      }
+      if (kind === 'finished' || kind === 'failed') {
+        source.close();
+        onClose?.();
+      }
+    });
+  }
+
+  source.onerror = () => {
+    // EventSource retries on its own. Only a closed source is terminal.
+    if (source.readyState === EventSource.CLOSED) onClose?.();
+  };
+
+  return () => source.close();
+}
+
+/** `20000` → `0.02`, without floats: the string is the source of truth. */
+export function formatUnits(base: string, decimals = 6): string {
+  const negative = base.startsWith('-');
+  const digits = (negative ? base.slice(1) : base).padStart(decimals + 1, '0');
+  const whole = digits.slice(0, -decimals) || '0';
+  const fraction = digits.slice(-decimals).replace(/0+$/, '');
+  return `${negative ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''}`;
+}

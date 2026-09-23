@@ -1,0 +1,42 @@
+@import 'tailwindcss';
+
+/*
+ * One dark theme, no toggle.
+ *
+ * The page is watched in a recording and on a projector, so contrast is the
+ * only requirement that matters. A theme switcher is a control nobody uses
+ * during a two-minute demo and one more thing to be mid-transition when the
+ * screenshot is taken.
+ */
+@theme {
+  --color-ink: #07090d;
+  --color-surface: #11141b;
+  --color-edge: #232833;
+  --color-muted: #8b94a7;
+  --color-text: #e8ecf4;
+
+  /* Status colours are semantic, and they are the same everywhere: money
+     settled is always green, refused is always amber, broken is always red. */
+  --color-settled: #3fd68c;
+  --color-refused: #f5b942;
+  --color-broken: #ff6b6b;
+  --color-accent: #6ea8ff;
+}
+
+html,
+body {
+  background: var(--color-ink);
+  color: var(--color-text);
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Monospace for anything on-chain. A hash or an amount that reflows between
+   renders reads as instability in the thing being demonstrated. */
+.tabular {
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
