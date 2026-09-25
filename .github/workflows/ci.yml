@@ -1,0 +1,27 @@
+name: interface
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: typecheck · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+
+      - run: pnpm install --frozen-lockfile
+      - run: npx tsc --noEmit
+      - run: npx next build
+
+  # `pnpm check:contract` is deliberately NOT here. It asks a RUNNING API
+  # whether every field this repo reads still exists, which is exactly what
+  # makes it worth having — and it means it belongs against a deployed
+  # environment, not against a CI job with no server to ask. Running it here
+  # would only be able to assert that it fails to connect.
