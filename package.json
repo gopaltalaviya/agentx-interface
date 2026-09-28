@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "check:contract": "node scripts/check-api-contract.mjs"
+    "check:contract": "node scripts/check-api-contract.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "next": "15.5.26",
@@ -22,6 +23,7 @@
     "@types/node": "^22.9.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
   }
 }
