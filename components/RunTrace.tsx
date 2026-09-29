@@ -24,6 +24,7 @@ const TONE: Record<string, string> = {
   judged: 'text-text',
   settled: 'text-settled',
   disputed: 'text-refused',
+  retrying: 'text-refused',
   skipped: 'text-refused',
   finished: 'text-settled',
   failed: 'text-broken',
@@ -123,6 +124,14 @@ function Line({event}: {event: RunEvent}) {
       return (
         <>
           job {String(p['jobId'])} <span className="text-muted">— {String(p['reason'] ?? '')}</span>
+        </>
+      );
+
+    case 'retrying':
+      return (
+        <>
+          job {String(p['jobId'])}{' '}
+          <span className="text-muted">— {String(p['reason'] ?? '')}; asking another agent</span>
         </>
       );
 

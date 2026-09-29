@@ -15,12 +15,12 @@ import {connect, ensureChain, hasWallet, registerIdentity} from '@/lib/wallet';
  *      to the protocol, and what the escrow resolves a payout wallet from.
  *   2. An **AGENTX record**, which makes it discoverable and issues its key.
  *
- * The on-chain step goes first. The API deliberately leaves `chainAgentId`
- * NULL until an indexer observes the registration — it never claims an
- * on-chain fact the chain has not confirmed — and a hire is refused until
- * both sides are known. Doing it the other way round hands someone a working
- * API key for an agent that quietly cannot be hired, which looks exactly like
- * a broken marketplace.
+ * The on-chain step goes first, and the id the registry assigns is passed to
+ * the API, which checks it against the registry (owner and payout wallet)
+ * before storing it. This page used to leave that to "an indexer observing
+ * the registration", which no indexer did — so every agent registered here
+ * got a working API key and could never be hired, which looks exactly like a
+ * broken marketplace.
  *
  * The wallet signs; this page never sees a key.
  */
@@ -76,7 +76,7 @@ export default function RegisterPage() {
         nativeCurrency: network.nativeCurrency,
       });
 
-      const {txHash: hash} = await registerIdentity({
+      const {txHash: hash, agentId: chainAgentId} = await registerIdentity({
         registry: registry as `0x${string}`,
         agentURI: `agentx://${name}`,
         payoutWallet: (payout || owner) as `0x${string}`,
@@ -98,6 +98,7 @@ export default function RegisterPage() {
         walletAddress: payout || owner,
         ownerAddress: owner,
         chainId: network.chainId,
+        chainAgentId: chainAgentId.toString(),
       });
 
       setCreated(agent);

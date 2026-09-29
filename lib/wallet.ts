@@ -23,6 +23,7 @@ import {
   custom,
   encodeFunctionData,
   http,
+  parseEventLogs,
   type Address,
   type Hex,
 } from 'viem';
@@ -45,6 +46,15 @@ export const IDENTITY_ABI = [
     stateMutability: 'nonpayable',
     inputs: [{name: 'agentURI', type: 'string'}],
     outputs: [{name: 'agentId', type: 'uint256'}],
+  },
+  {
+    type: 'event',
+    name: 'Registered',
+    inputs: [
+      {name: 'agentId', type: 'uint256', indexed: true},
+      {name: 'agentURI', type: 'string', indexed: false},
+      {name: 'owner', type: 'address', indexed: true},
+    ],
   },
 ] as const;
 
@@ -128,7 +138,7 @@ export async function registerIdentity(args: {
   referenceImplementation: boolean;
   chainId: number;
   rpcUrl: string;
-}): Promise<{txHash: Hex}> {
+}): Promise<{txHash: Hex; agentId: bigint}> {
   const account = await connect();
 
   const data = args.referenceImplementation
@@ -156,7 +166,13 @@ export async function registerIdentity(args: {
   // cannot be hired until an indexer catches up — which looks, to whoever
   // registered it, exactly like a broken marketplace.
   const pub = createPublicClient({transport: http(args.rpcUrl)});
-  await pub.waitForTransactionReceipt({hash: txHash});
+  const receipt = await pub.waitForTransactionReceipt({hash: txHash});
 
-  return {txHash};
+  // The id the registry assigned. The API needs it to link the record to the
+  // identity — without it the agent exists but can never be hired, because
+  // the escrow addresses agents by this id.
+  const [registered] = parseEventLogs({abi: IDENTITY_ABI, eventName: 'Registered', logs: receipt.logs});
+  if (!registered) throw new Error(`registration ${txHash} emitted no Registered event`);
+
+  return {txHash, agentId: registered.args.agentId};
 }

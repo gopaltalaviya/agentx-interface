@@ -98,6 +98,7 @@ export type RunEventKind =
   | 'judged'
   | 'settled'
   | 'disputed'
+  | 'retrying'
   | 'skipped'
   | 'finished'
   | 'failed';
@@ -163,6 +164,8 @@ export const api = {
     walletAddress: string;
     ownerAddress: string;
     chainId: number;
+    /** The ERC-8004 id; the API checks it against the registry before storing it. */
+    chainAgentId?: string;
   }): Promise<RegisteredAgent> {
     const res = await fetch(`${API_URL}/v1/agents`, {
       method: 'POST',
@@ -221,6 +224,7 @@ export function subscribeToRun(
     'judged',
     'settled',
     'disputed',
+    'retrying',
     'skipped',
     'finished',
     'failed',
