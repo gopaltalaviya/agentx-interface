@@ -137,7 +137,7 @@ export default function DemoPage() {
             credential is a page nobody should paste one into. */}
         <p className="text-xs text-muted">
           The key is used for this request only — it is never stored, and the run spends under that
-          agent&apos;s own on-chain caps.
+          agent&apos;s own spending caps, which the signer enforces.
         </p>
 
         {error && (
