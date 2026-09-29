@@ -80,7 +80,9 @@ export interface RunDetail extends RunSummary {
 
 export interface RunStep {
   capability: string;
-  status: 'settled' | 'disputed' | 'no-candidate' | 'budget-exceeded' | 'timeout' | 'failed';
+  status: 'settled' | 'disputed' | 'unrecoverable' | 'no-candidate' | 'budget-exceeded' | 'timeout' | 'failed';
+  /** Set when a second worker delivered: why the first did not. */
+  retriedAfter?: string;
   detail: string;
   jobId?: string;
   agentId?: number;
@@ -149,6 +151,23 @@ export const api = {
   agent: (agentId: number) => get<AgentSummary>(`/v1/agents/${agentId}`),
 
   run: (runId: string) => get<RunDetail>(`/v1/runs/${runId}`),
+
+  /**
+   * The runs an orchestrator has made, newest first. Needs its key — a run
+   * history is that agent's own business — which, as on the demo page, is
+   * used for the request and never stored.
+   */
+  async runs(apiKey: string, limit = 50): Promise<RunSummary[]> {
+    const res = await fetch(`${API_URL}/v1/runs?limit=${limit}`, {
+      cache: 'no-store',
+      headers: {authorization: `Bearer ${apiKey}`},
+    });
+    if (!res.ok) {
+      const problem = (await res.json().catch(() => ({}))) as {code?: string; detail?: string};
+      throw new ApiError(problem.code ?? 'UNKNOWN', problem.detail ?? `could not list runs (${res.status})`);
+    }
+    return ((await res.json()) as {runs: RunSummary[]}).runs;
+  },
 
   /**
    * Create the AGENTX record for an agent.

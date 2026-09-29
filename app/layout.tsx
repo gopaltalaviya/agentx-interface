@@ -28,6 +28,9 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
               <Link href="/register" className="hover:text-text">
                 Register
               </Link>
+              <Link href="/runs" className="hover:text-text">
+                Runs
+              </Link>
             </nav>
             {/* Which chain, and whether the money is real — on every page,
                 because it is the one fact a viewer must never have to guess. */}
