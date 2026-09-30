@@ -94,6 +94,7 @@ export interface RunStep {
 /** The event kinds the orchestrator emits, plus the two terminal ones. */
 export type RunEventKind =
   | 'planned'
+  | 'plan-failed'
   | 'discovered'
   | 'selected'
   | 'hired'
@@ -235,8 +236,11 @@ export function subscribeToRun(
 ): () => void {
   const source = new EventSource(`${API_URL}/v1/runs/${runId}/events`);
 
+  // Every kind the page renders. A kind missing here is not an error — it is
+  // silence: an SSE event with no listener is dropped by the browser.
   const KINDS: RunEventKind[] = [
     'planned',
+    'plan-failed',
     'discovered',
     'selected',
     'hired',

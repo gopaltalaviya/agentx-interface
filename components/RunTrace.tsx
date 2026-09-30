@@ -18,6 +18,9 @@ import type {RunEvent} from '@/lib/api';
 
 const TONE: Record<string, string> = {
   planned: 'text-accent',
+  // No plan is not a decision the system made — the model could not be
+  // reached or answered off-schema — so it is red, not amber.
+  'plan-failed': 'text-broken',
   discovered: 'text-muted',
   selected: 'text-text',
   hired: 'text-text',
@@ -69,6 +72,9 @@ function Line({event}: {event: RunEvent}) {
           <span className="text-muted"> — {String(p['reasoning'] ?? '')}</span>
         </>
       );
+
+    case 'plan-failed':
+      return <span className="text-broken">no plan — {String(p['reason'] ?? 'the model could not be reached')}</span>;
 
     case 'discovered':
       return (
