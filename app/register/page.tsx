@@ -2,7 +2,9 @@
 
 import {useEffect, useState} from 'react';
 import Link from 'next/link';
-import {ApiError, api, type NetworkInfo, type RegisteredAgent} from '@/lib/api';
+import {isAddress} from 'viem';
+import {ApiError, api, formatUnits, type NetworkInfo, type RegisteredAgent} from '@/lib/api';
+import {safeHref} from '@/lib/links';
 import {connect, ensureChain, hasWallet, registerIdentity} from '@/lib/wallet';
 
 /**
@@ -42,12 +44,28 @@ export default function RegisterPage() {
   const [payout, setPayout] = useState('');
 
   useEffect(() => {
-    api.network().then(setNetwork).catch(() => setError('The API is unreachable.'));
+    api
+      .network()
+      .then(setNetwork)
+      .catch(() => setError('The API is unreachable.'));
   }, []);
 
-  const wallet = hasWallet();
+  // Read after mount, not during render: `window.ethereum` does not exist on
+  // the server, and reading it in render made the first client render
+  // disagree with the server's HTML (a hydration mismatch).
+  const [wallet, setWallet] = useState(false);
+  useEffect(() => setWallet(hasWallet()), []);
+
   const registry = network?.erc8004?.identityRegistry;
+  const rpcUrl = network?.rpcUrls[0];
   const busy = stage === 'identity' || stage === 'record';
+
+  // Checked here, before the wallet is asked to sign anything: a typo in the
+  // payout wallet is an identity whose payments go nowhere, and a price under
+  // the escrow minimum is an agent that can be registered but never hired.
+  const payoutInvalid = payout !== '' && !isAddress(payout);
+  const minimum = network?.minJobAmount;
+  const priceTooLow = price !== '' && minimum !== undefined && BigInt(price) < BigInt(minimum);
 
   async function onConnect() {
     setError(null);
@@ -65,13 +83,21 @@ export default function RegisterPage() {
   async function onSubmit() {
     if (!network || !owner || !registry) return;
     setError(null);
+    if (!rpcUrl) {
+      setError('This network publishes no RPC endpoint, so a wallet cannot be pointed at it.');
+      return;
+    }
+    if (payoutInvalid) {
+      setError('The payout wallet is not a valid address.');
+      return;
+    }
 
     try {
       setStage('identity');
       await ensureChain({
         chainId: network.chainId,
         name: network.name,
-        rpcUrl: network.rpcUrls[0]!,
+        rpcUrl,
         explorerBaseUrl: network.explorerBaseUrl,
         nativeCurrency: network.nativeCurrency,
       });
@@ -82,7 +108,7 @@ export default function RegisterPage() {
         payoutWallet: (payout || owner) as `0x${string}`,
         referenceImplementation: network.erc8004.referenceImplementation,
         chainId: network.chainId,
-        rpcUrl: network.rpcUrls[0]!,
+        rpcUrl,
       });
       setTxHash(hash);
 
@@ -126,16 +152,15 @@ export default function RegisterPage() {
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Register an agent</h1>
         <p className="text-sm text-muted">
-          Two steps: an ERC-8004 identity on-chain, then the AGENTX record. The identity goes first,
-          because an agent without one cannot be hired.
+          Two steps: an ERC-8004 identity on-chain, then the AGENTX record. The identity goes first, because
+          an agent without one cannot be hired.
         </p>
       </header>
 
       {!wallet && (
         <p className="rounded-md border border-refused/40 bg-refused/10 px-3 py-2 text-sm text-refused">
           No browser wallet found. Install MetaMask, or register through the API directly —{' '}
-          <code className="tabular">POST /v1/agents</code> — which is how the demo agents are
-          registered.
+          <code className="tabular">POST /v1/agents</code> — which is how the demo agents are registered.
         </p>
       )}
 
@@ -146,6 +171,7 @@ export default function RegisterPage() {
             onChange={(e) => setName(e.target.value)}
             disabled={busy}
             placeholder="ResearchBot"
+            autoComplete="off"
             className="w-full rounded-md border border-edge bg-ink px-3 py-2 text-sm outline-none focus:border-accent"
           />
         </Field>
@@ -156,6 +182,7 @@ export default function RegisterPage() {
             onChange={(e) => setDescription(e.target.value)}
             disabled={busy}
             placeholder="Reports order book depth with named sources"
+            autoComplete="off"
             className="w-full rounded-md border border-edge bg-ink px-3 py-2 text-sm outline-none focus:border-accent"
           />
         </Field>
@@ -182,9 +209,18 @@ export default function RegisterPage() {
             onChange={(e) => setPrice(e.target.value.replace(/\D/g, ''))}
             disabled={busy}
             inputMode="numeric"
+            autoComplete="off"
+            aria-invalid={priceTooLow}
             className="tabular w-full rounded-md border border-edge bg-ink px-3 py-2 text-sm outline-none focus:border-accent"
           />
         </Field>
+        {priceTooLow && minimum !== undefined && network && (
+          <p role="alert" className="-mt-2 text-xs text-refused">
+            Below the escrow minimum of {formatUnits(minimum, network.paymentToken.decimals)}{' '}
+            {network.paymentToken.symbol} — the escrow refuses any job cheaper than that, so this agent could
+            never be hired.
+          </p>
+        )}
 
         <Field label="Payout wallet" hint="where settlements are paid; defaults to the owner">
           <input
@@ -192,9 +228,17 @@ export default function RegisterPage() {
             onChange={(e) => setPayout(e.target.value.trim())}
             disabled={busy}
             placeholder="0x…"
+            autoComplete="off"
+            spellCheck={false}
+            aria-invalid={payoutInvalid}
             className="tabular w-full rounded-md border border-edge bg-ink px-3 py-2 text-sm outline-none focus:border-accent"
           />
         </Field>
+        {payoutInvalid && (
+          <p role="alert" className="-mt-2 text-xs text-broken">
+            Not an address. Settlements would go nowhere anyone controls.
+          </p>
+        )}
 
         <div className="flex flex-wrap items-center gap-3 pt-1">
           {owner ? (
@@ -203,7 +247,8 @@ export default function RegisterPage() {
             </span>
           ) : (
             <button
-              onClick={onConnect}
+              type="button"
+              onClick={() => void onConnect()}
               disabled={!wallet}
               className="rounded-md border border-edge px-4 py-2 text-sm hover:border-accent disabled:opacity-40"
             >
@@ -212,8 +257,18 @@ export default function RegisterPage() {
           )}
 
           <button
-            onClick={onSubmit}
-            disabled={busy || !owner || !registry || name.trim().length === 0 || price === ''}
+            type="button"
+            onClick={() => void onSubmit()}
+            aria-describedby="register-stage"
+            disabled={
+              busy ||
+              !owner ||
+              !registry ||
+              name.trim().length === 0 ||
+              price === '' ||
+              priceTooLow ||
+              payoutInvalid
+            }
             className="ml-auto rounded-md bg-accent px-5 py-2 text-sm font-medium text-ink disabled:opacity-40"
           >
             {stage === 'identity'
@@ -223,16 +278,25 @@ export default function RegisterPage() {
                 : 'Register'}
           </button>
         </div>
+        <p id="register-stage" role="status" aria-live="polite" className="sr-only">
+          {stage === 'identity'
+            ? 'Waiting for the identity transaction to be mined.'
+            : stage === 'record'
+              ? 'Identity registered. Creating the AGENTX record.'
+              : ''}
+        </p>
 
         {!registry && network && (
           <p className="text-xs text-refused">
-            This network has no identity registry configured, so on-chain registration is
-            unavailable here.
+            This network has no identity registry configured, so on-chain registration is unavailable here.
           </p>
         )}
 
         {error && (
-          <p className="rounded-md border border-broken/40 bg-broken/10 px-3 py-2 text-sm text-broken">
+          <p
+            role="alert"
+            className="rounded-md border border-broken/40 bg-broken/10 px-3 py-2 text-sm text-broken"
+          >
             {error}
           </p>
         )}
@@ -250,6 +314,33 @@ function Done({
   txHash: string | null;
   network: NetworkInfo | null;
 }) {
+  const [copied, setCopied] = useState<'no' | 'yes' | 'failed'>('no');
+
+  // The key exists nowhere else. Leaving, reloading or closing the tab before
+  // it is copied loses it for good, so the browser asks first.
+  useEffect(() => {
+    if (copied === 'yes') return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [copied]);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(agent.apiKey);
+      setCopied('yes');
+    } catch {
+      // Clipboard access can be refused (permissions, an insecure origin).
+      // Say so; the key is still selectable on screen.
+      setCopied('failed');
+    }
+  }
+
+  const tx = txHash && network?.explorerBaseUrl ? safeHref(`${network.explorerBaseUrl}/tx/${txHash}`) : null;
+
   return (
     <div className="max-w-2xl space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">Agent #{agent.agentId} registered</h1>
@@ -257,30 +348,48 @@ function Done({
       {/* The key is shown once and only a hash is stored, so this is the only
           moment it exists anywhere the person can read it. It gets the most
           prominent place on the page, not a toast that can be missed. */}
-      <section className="space-y-2 rounded-lg border border-refused/50 bg-refused/10 p-5">
-        <h2 className="text-sm font-medium text-refused">Copy this key now</h2>
-        <code className="tabular block break-all rounded border border-edge bg-ink px-3 py-2 text-sm">
-          {agent.apiKey}
-        </code>
-        <p className="text-xs text-refused">{agent.warning}</p>
+      <section
+        aria-labelledby="key-heading"
+        className="space-y-2 rounded-lg border border-refused/50 bg-refused/10 p-5"
+      >
+        <h2 id="key-heading" className="text-sm font-medium text-refused">
+          Copy this key now
+        </h2>
+        <div className="flex items-stretch gap-2">
+          <code className="tabular block min-w-0 flex-1 break-all rounded border border-edge bg-ink px-3 py-2 text-sm">
+            {agent.apiKey}
+          </code>
+          <button
+            type="button"
+            onClick={() => void copy()}
+            className="shrink-0 rounded-md border border-edge px-3 text-sm hover:border-accent"
+          >
+            {copied === 'yes' ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+        <p role="status" aria-live="polite" className="text-xs text-refused">
+          {copied === 'failed'
+            ? 'The browser refused clipboard access — select the key and copy it by hand.'
+            : copied === 'yes'
+              ? 'Copied. Store it somewhere safe; it cannot be shown again.'
+              : agent.warning}
+        </p>
       </section>
 
       <section className="space-y-2 rounded-lg border border-edge bg-surface p-5 text-sm">
-        <h2 className="font-medium">Not hireable yet</h2>
+        <h2 className="font-medium">Hireable now</h2>
         <p className="text-muted">
-          The AGENTX record links to the on-chain identity only once an indexer has seen the
-          registration confirmed — it will not claim an on-chain fact the chain has not confirmed.
-          Until then, a hire is refused rather than sent to the wrong wallet. This usually takes a
-          few blocks.
+          The API checked the ERC-8004 identity against the registry — its owner and its payout wallet —
+          before creating this record, so the escrow can pay this agent from its first job. Its reputation
+          starts unproven and moves only when a payment to it settles.
         </p>
-        {txHash && network?.explorerBaseUrl && (
-          <a
-            href={`${network.explorerBaseUrl}/tx/${txHash}`}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-block text-accent hover:underline"
-          >
-            identity transaction ↗
+        <p className="text-muted">
+          An orchestrator you also own cannot hire it: the escrow refuses a job between two agents of one
+          owner, because a reputation you can pay yourself for is worth nothing.
+        </p>
+        {tx && (
+          <a href={tx} target="_blank" rel="noreferrer" className="inline-block text-accent hover:underline">
+            identity transaction ↗<span className="sr-only"> (opens the block explorer in a new tab)</span>
           </a>
         )}
       </section>
@@ -295,15 +404,7 @@ function Done({
   );
 }
 
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
+function Field({label, hint, children}: {label: string; hint?: string; children: React.ReactNode}) {
   return (
     <label className="block space-y-1">
       <span className="text-sm font-medium">{label}</span>

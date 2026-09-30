@@ -95,6 +95,8 @@ try {
     'explorerBaseUrl',
     'fastPathMaxDisplay',
     'protocolFeeBps',
+    'minJobAmount',
+    'windows',
   ]);
   expectFields('/v1/network paymentToken', network.paymentToken, ['symbol', 'decimals', 'address']);
   expectFields('/v1/network nativeCurrency', network.nativeCurrency, ['name', 'symbol', 'decimals']);
@@ -138,9 +140,23 @@ try {
     ]);
   }
 
-  const run = await request('/v1/runs/1');
-  if (run.status >= 400) {
-    console.log('  – no run #1 yet; run one to check the trace fields');
+  // Run ids are unguessable uuids; a serial id must name nothing. If this
+  // ever answers 200, runs are enumerable again.
+  const serial = await request('/v1/runs/1');
+  serial.status === 404
+    ? ok('/v1/runs/1 is a 404 — a serial id names no run')
+    : fail(`/v1/runs/1 answered ${serial.status}; runs must only be reachable by their uuid`);
+
+  // Which run to read is the caller's to say: there is no way to discover one
+  // without an orchestrator's key, by design.
+  const runId = process.env.AGENTX_RUN_ID;
+  const run = runId ? await request(`/v1/runs/${encodeURIComponent(runId)}`) : null;
+  if (!run || run.status >= 400) {
+    console.log(
+      runId
+        ? `  – run ${runId} not found (${run?.status}); check the id`
+        : '  – set AGENTX_RUN_ID=<a run uuid> to check the trace fields',
+    );
   } else {
     const parsed = JSON.parse(run.body);
     expectFields('/v1/runs/:id', parsed, [

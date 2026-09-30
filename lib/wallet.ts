@@ -23,6 +23,7 @@ import {
   custom,
   encodeFunctionData,
   http,
+  isAddress,
   parseEventLogs,
   type Address,
   type Hex,
@@ -66,9 +67,7 @@ interface Eip1193Provider {
 function provider(): Eip1193Provider {
   const injected = (globalThis as {ethereum?: Eip1193Provider}).ethereum;
   if (!injected) {
-    throw new Error(
-      'No browser wallet found. Install MetaMask, or register through the API directly.',
-    );
+    throw new Error('No browser wallet found. Install MetaMask, or register through the API directly.');
   }
   return injected;
 }
@@ -124,6 +123,8 @@ export async function ensureChain(chain: {
   }
 }
 
+export const RECEIPT_TIMEOUT_MS = 120_000;
+
 /**
  * Register an ERC-8004 identity and wait for it to be mined.
  *
@@ -139,6 +140,15 @@ export async function registerIdentity(args: {
   chainId: number;
   rpcUrl: string;
 }): Promise<{txHash: Hex; agentId: bigint}> {
+  // Checked before the wallet is asked anything: a malformed address would
+  // either be rejected by the wallet with an opaque message or, worse,
+  // register an identity whose payouts go nowhere anyone controls.
+  if (!isAddress(args.registry))
+    throw new Error(`the identity registry address is invalid: ${args.registry}`);
+  if (!isAddress(args.payoutWallet))
+    throw new Error(`the payout wallet is not an address: ${args.payoutWallet}`);
+  if (!/^https?:\/\//.test(args.rpcUrl)) throw new Error('this network publishes no usable RPC endpoint');
+
   const account = await connect();
 
   const data = args.referenceImplementation
@@ -166,7 +176,19 @@ export async function registerIdentity(args: {
   // cannot be hired until an indexer catches up — which looks, to whoever
   // registered it, exactly like a broken marketplace.
   const pub = createPublicClient({transport: http(args.rpcUrl)});
-  const receipt = await pub.waitForTransactionReceipt({hash: txHash});
+  // Bounded: an RPC that never answers used to leave the page on "Waiting
+  // for the identity transaction…" forever. The transaction may still land,
+  // and the message says where to look.
+  const receipt = await pub
+    .waitForTransactionReceipt({hash: txHash, timeout: RECEIPT_TIMEOUT_MS})
+    .catch((err: unknown) => {
+      throw new Error(
+        `no receipt for ${txHash} after ${RECEIPT_TIMEOUT_MS / 1000}s — check it on the explorer before retrying (${
+          err instanceof Error ? err.message.split('\n')[0] : String(err)
+        })`,
+      );
+    });
+  if (receipt.status !== 'success') throw new Error(`the registration ${txHash} reverted`);
 
   // The id the registry assigned. The API needs it to link the record to the
   // identity — without it the agent exists but can never be hired, because

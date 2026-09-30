@@ -27,15 +27,31 @@ const MODES: {id: string; label: string; blurb: string}[] = [
 export default function MarketplacePage() {
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
   const [mode, setMode] = useState('balanced');
+  const [input, setInput] = useState('');
   const [capability, setCapability] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  // One request per pause in typing, not per keystroke: "market-research"
+  // used to be fifteen requests, and whichever came back LAST won — not
+  // necessarily the one for what was finally typed.
   useEffect(() => {
+    const timer = setTimeout(() => setCapability(input.trim().toLowerCase()), 250);
+    return () => clearTimeout(timer);
+  }, [input]);
+
+  useEffect(() => {
+    // Aborting the previous request is what makes the order safe: a stale
+    // response can no longer land after a fresh one.
+    const controller = new AbortController();
     setError(null);
     api
-      .agents({rank: mode, ...(capability ? {capability} : {}), limit: 50})
+      .agents({rank: mode, ...(capability ? {capability} : {}), limit: 50}, controller.signal)
       .then(setAgents)
-      .catch((err) => setError(err instanceof Error ? err.message : 'could not load agents'));
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
+        setError(err instanceof Error ? err.message : 'could not load agents');
+      });
+    return () => controller.abort();
   }, [mode, capability]);
 
   return (
@@ -48,10 +64,12 @@ export default function MarketplacePage() {
       </section>
 
       <section className="flex flex-wrap items-center gap-3">
-        <div className="flex flex-wrap gap-2">
+        <div role="group" aria-label="Rank agents by" className="flex flex-wrap gap-2">
           {MODES.map((m) => (
             <button
               key={m.id}
+              type="button"
+              aria-pressed={m.id === mode}
               onClick={() => setMode(m.id)}
               title={m.blurb}
               className={
@@ -65,28 +83,42 @@ export default function MarketplacePage() {
           ))}
         </div>
 
+        <label htmlFor="capability-filter" className="sr-only">
+          Filter by capability
+        </label>
         <input
-          value={capability}
-          onChange={(e) => setCapability(e.target.value.trim())}
+          id="capability-filter"
+          type="search"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          autoComplete="off"
+          spellCheck={false}
           placeholder="capability, e.g. market-research"
           className="ml-auto w-64 rounded-md border border-edge bg-surface px-3 py-1.5 text-sm outline-none focus:border-accent"
         />
       </section>
 
-      <p className="text-xs text-muted">{MODES.find((m) => m.id === mode)?.blurb}</p>
+      <p aria-live="polite" className="text-xs text-muted">
+        {MODES.find((m) => m.id === mode)?.blurb}
+      </p>
 
       {error && (
-        <p className="rounded-md border border-broken/40 bg-broken/10 px-3 py-2 text-sm text-broken">
+        <p
+          role="alert"
+          className="rounded-md border border-broken/40 bg-broken/10 px-3 py-2 text-sm text-broken"
+        >
           {error}
         </p>
       )}
 
-      {agents === null && !error && <p className="py-8 text-sm text-muted">Loading…</p>}
+      {agents === null && !error && (
+        <p role="status" className="py-8 text-sm text-muted">
+          Loading…
+        </p>
+      )}
 
       {agents?.length === 0 && (
-        <p className="py-8 text-sm text-muted">
-          No agent matches{capability ? ` “${capability}”` : ''} yet.
-        </p>
+        <p className="py-8 text-sm text-muted">No agent matches{capability ? ` “${capability}”` : ''} yet.</p>
       )}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

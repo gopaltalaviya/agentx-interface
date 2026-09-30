@@ -1,6 +1,7 @@
 'use client';
 
-import type {RunEvent} from '@/lib/api';
+import {formatUnits, type RunEvent} from '@/lib/api';
+import {safeHref, shortId} from '@/lib/links';
 
 /**
  * The trace, one line per event.
@@ -33,19 +34,42 @@ const TONE: Record<string, string> = {
   failed: 'text-broken',
 };
 
-export function RunTrace({events, startedAt}: {events: RunEvent[]; startedAt: number | null}) {
+/** The payment token, so a total reads as "0.05 USDC" rather than "50000 base units". */
+export interface TraceToken {
+  symbol: string;
+  decimals: number;
+}
+
+export function RunTrace({
+  events,
+  startedAt,
+  token,
+  live = false,
+}: {
+  events: RunEvent[];
+  startedAt: number | null;
+  token?: TraceToken | null;
+  /** A trace still streaming is announced to screen readers as lines arrive. */
+  live?: boolean;
+}) {
   if (events.length === 0) {
     return (
-      <p className="py-8 text-center text-sm text-muted">
+      <p role="status" className="py-8 text-center text-sm text-muted">
         Waiting for the first event…
       </p>
     );
   }
 
   return (
-    <ol className="divide-y divide-edge">
+    <ol
+      className="divide-y divide-edge"
+      aria-label="Run trace"
+      {...(live ? {'aria-live': 'polite' as const, 'aria-relevant': 'additions' as const} : {})}
+    >
+      {/* The trace is append-only and never reordered, so position IS a
+          stable identity here; `at` alone is not unique within a millisecond. */}
       {events.map((event, i) => (
-        <li key={i} className="flex gap-4 py-2.5 text-sm">
+        <li key={`${i}-${event.kind}-${event.at}`} className="flex gap-4 py-2.5 text-sm">
           <span className="tabular w-12 shrink-0 text-right text-xs text-muted">
             {startedAt ? `${((event.at - startedAt) / 1000).toFixed(1)}s` : ''}
           </span>
@@ -53,7 +77,7 @@ export function RunTrace({events, startedAt}: {events: RunEvent[]; startedAt: nu
             {event.kind}
           </span>
           <span className="min-w-0 flex-1">
-            <Line event={event} />
+            <Line event={event} token={token ?? null} />
           </span>
         </li>
       ))}
@@ -61,7 +85,7 @@ export function RunTrace({events, startedAt}: {events: RunEvent[]; startedAt: nu
   );
 }
 
-function Line({event}: {event: RunEvent}) {
+function Line({event, token}: {event: RunEvent; token: TraceToken | null}) {
   const p = event.payload;
 
   switch (event.kind) {
@@ -74,7 +98,11 @@ function Line({event}: {event: RunEvent}) {
       );
 
     case 'plan-failed':
-      return <span className="text-broken">no plan — {String(p['reason'] ?? 'the model could not be reached')}</span>;
+      return (
+        <span className="text-broken">
+          no plan — {String(p['reason'] ?? 'the model could not be reached')}
+        </span>
+      );
 
     case 'discovered':
       return (
@@ -96,8 +124,7 @@ function Line({event}: {event: RunEvent}) {
     case 'hired':
       return (
         <>
-          job <strong>{String(p['jobId'])}</strong> for{' '}
-          <span className="tabular">{String(p['amount'])}</span>
+          job <JobId id={p['jobId']} /> for <span className="tabular">{String(p['amount'])}</span>
           <Explorer url={p['explorerUrl']} />
         </>
       );
@@ -105,7 +132,7 @@ function Line({event}: {event: RunEvent}) {
     case 'judged':
       return (
         <>
-          job {String(p['jobId'])}:{' '}
+          job <JobId id={p['jobId']} />:{' '}
           <strong className={p['accept'] ? 'text-settled' : 'text-refused'}>
             {p['accept'] ? 'accept' : 'reject'}
           </strong>{' '}
@@ -121,7 +148,7 @@ function Line({event}: {event: RunEvent}) {
     case 'settled':
       return (
         <>
-          job <strong>{String(p['jobId'])}</strong> paid
+          job <JobId id={p['jobId']} /> paid
           <Explorer url={p['explorerUrl']} />
         </>
       );
@@ -129,14 +156,14 @@ function Line({event}: {event: RunEvent}) {
     case 'disputed':
       return (
         <>
-          job {String(p['jobId'])} <span className="text-muted">— {String(p['reason'] ?? '')}</span>
+          job <JobId id={p['jobId']} /> <span className="text-muted">— {String(p['reason'] ?? '')}</span>
         </>
       );
 
     case 'retrying':
       return (
         <>
-          job {String(p['jobId'])}{' '}
+          job <JobId id={p['jobId']} />{' '}
           <span className="text-muted">— {String(p['reason'] ?? '')}; asking another agent</span>
         </>
       );
@@ -152,7 +179,7 @@ function Line({event}: {event: RunEvent}) {
     case 'finished':
       return (
         <span className="text-muted">
-          spent <span className="tabular">{String(p['spent'])}</span> base units
+          spent <Amount base={p['spent']} token={token} />
         </span>
       );
 
@@ -164,16 +191,36 @@ function Line({event}: {event: RunEvent}) {
   }
 }
 
+function JobId({id}: {id: unknown}) {
+  const text = String(id ?? '');
+  return (
+    <strong className="tabular" title={text}>
+      {shortId(text)}
+    </strong>
+  );
+}
+
+function Amount({base, token}: {base: unknown; token: TraceToken | null}) {
+  const text = String(base ?? '');
+  if (!/^\d+$/.test(text)) return <span className="tabular">{text || '—'}</span>;
+  return (
+    <span className="tabular">
+      {token ? `${formatUnits(text, token.decimals)} ${token.symbol}` : `${text} base units`}
+    </span>
+  );
+}
+
 function Explorer({url}: {url: unknown}) {
-  if (typeof url !== 'string' || !url) return null;
+  const href = safeHref(url);
+  if (!href) return null;
   return (
     <a
-      href={url}
+      href={href}
       target="_blank"
       rel="noreferrer"
       className="ml-2 text-xs text-accent underline-offset-2 hover:underline"
     >
-      explorer ↗
+      explorer ↗<span className="sr-only"> (opens the block explorer in a new tab)</span>
     </a>
   );
 }

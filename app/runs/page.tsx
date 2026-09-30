@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import {useState} from 'react';
 import {api, type RunSummary} from '@/lib/api';
+import {shortId} from '@/lib/links';
 
 /**
  * Run history.
@@ -48,8 +49,8 @@ export default function RunsPage() {
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Runs</h1>
         <p className="max-w-2xl text-sm text-muted">
-          Every goal an orchestrator was given, what it spent, and how each step ended. Open one for
-          the full trace — plan, hires, verdicts and settlements, each with its transaction.
+          Every goal an orchestrator was given, what it spent, and how each step ended. Open one for the full
+          trace — plan, hires, verdicts and settlements, each with its transaction.
         </p>
       </header>
 
@@ -60,12 +61,18 @@ export default function RunsPage() {
           if (key.trim()) void load();
         }}
       >
+        <label htmlFor="runs-api-key" className="sr-only">
+          Orchestrator API key
+        </label>
         <input
+          id="runs-api-key"
           type="password"
           value={key}
           onChange={(e) => setKey(e.target.value)}
           placeholder="Orchestrator API key (ax_…)"
           autoComplete="off"
+          spellCheck={false}
+          aria-describedby="runs-key-note"
           className="tabular flex-1 rounded-md border border-edge bg-ink px-3 py-2 text-sm placeholder:text-muted"
         />
         <button
@@ -76,13 +83,22 @@ export default function RunsPage() {
           {loading ? 'Loading…' : 'Show runs'}
         </button>
       </form>
-      <p className="text-xs text-muted">The key is used for this request only — it is never stored.</p>
+      <p id="runs-key-note" className="text-xs text-muted">
+        The key is used for this request only — it is never stored.
+      </p>
 
       {error && (
-        <p className="rounded-md border border-broken/40 bg-broken/10 px-3 py-2 text-sm text-broken">{error}</p>
+        <p
+          role="alert"
+          className="rounded-md border border-broken/40 bg-broken/10 px-3 py-2 text-sm text-broken"
+        >
+          {error}
+        </p>
       )}
 
-      {runs && runs.length === 0 && <p className="py-8 text-sm text-muted">This orchestrator has no runs yet.</p>}
+      {runs && runs.length === 0 && (
+        <p className="py-8 text-sm text-muted">This orchestrator has no runs yet.</p>
+      )}
 
       {runs && runs.length > 0 && (
         <ul className="divide-y divide-edge rounded-lg border border-edge bg-surface">
@@ -94,7 +110,9 @@ export default function RunsPage() {
                   <span className={`shrink-0 text-xs font-medium ${STATE_TONE[run.state]}`}>{run.state}</span>
                 </div>
                 <div className="mt-1 flex gap-4 text-xs text-muted">
-                  <span>run {run.runId}</span>
+                  <span className="tabular" title={run.runId}>
+                    run {shortId(run.runId)}
+                  </span>
                   <span className="tabular">spent {run.spentDisplay}</span>
                   <span>{new Date(run.startedAt).toLocaleString()}</span>
                 </div>

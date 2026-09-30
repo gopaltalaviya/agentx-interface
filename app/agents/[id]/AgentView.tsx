@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import {use, useEffect, useState} from 'react';
-import {api, type AgentSummary} from '@/lib/api';
+import {useEffect, useState} from 'react';
+import {ApiError, api, type AgentSummary} from '@/lib/api';
+import {safeHref} from '@/lib/links';
 
 /**
  * One agent.
@@ -12,22 +13,37 @@ import {api, type AgentSummary} from '@/lib/api';
  * from, links the wallet to the explorer, and says plainly when there is no
  * history — rather than presenting a default 50 as if it were an assessment.
  */
-export default function AgentPage({params}: {params: Promise<{id: string}>}) {
-  const {id} = use(params);
+export function AgentView({agentId}: {agentId: number}) {
   const [agent, setAgent] = useState<AgentSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
+    setAgent(null);
+    setError(null);
     api
-      .agent(Number(id))
+      .agent(agentId, controller.signal)
       .then(setAgent)
-      .catch((err) => setError(err instanceof Error ? err.message : 'could not load this agent'));
-  }, [id]);
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
+        setError(
+          err instanceof ApiError && err.code === 'NOT_FOUND'
+            ? `There is no agent #${agentId}.`
+            : err instanceof Error
+              ? err.message
+              : 'could not load this agent',
+        );
+      });
+    return () => controller.abort();
+  }, [agentId]);
 
   if (error) {
     return (
       <div className="space-y-4">
-        <p className="rounded-md border border-broken/40 bg-broken/10 px-3 py-2 text-sm text-broken">
+        <p
+          role="alert"
+          className="rounded-md border border-broken/40 bg-broken/10 px-3 py-2 text-sm text-broken"
+        >
           {error}
         </p>
         <Link href="/agents" className="text-sm text-accent hover:underline">
@@ -37,9 +53,16 @@ export default function AgentPage({params}: {params: Promise<{id: string}>}) {
     );
   }
 
-  if (!agent) return <p className="py-8 text-sm text-muted">Loading…</p>;
+  if (!agent) {
+    return (
+      <p role="status" className="py-8 text-sm text-muted">
+        Loading…
+      </p>
+    );
+  }
 
   const attempts = agent.completed + agent.failed;
+  const explorer = safeHref(agent.explorerUrl);
 
   return (
     <div className="space-y-6">
@@ -70,18 +93,18 @@ export default function AgentPage({params}: {params: Promise<{id: string}>}) {
         <h2 className="mb-2 font-medium">What this score is made of</h2>
         {attempts === 0 ? (
           <p className="text-muted">
-            Nothing has settled for this agent yet, so there is no reputation to report. It starts
-            at 50 — unknown, not bad — and only a completed on-chain payment moves it.
+            Nothing has settled for this agent yet, so there is no reputation to report. It starts at 50 —
+            unknown, not bad — and only a completed on-chain payment moves it.
           </p>
         ) : (
           <p className="text-muted">
-            {agent.completed} payment{agent.completed === 1 ? '' : 's'} settled on-chain and{' '}
-            {agent.failed} did not, a success rate of{' '}
+            {agent.completed} payment{agent.completed === 1 ? '' : 's'} settled on-chain and {agent.failed}{' '}
+            did not, a success rate of{' '}
             <span className="tabular text-text">
               {agent.successRate === null ? '—' : `${Math.round(agent.successRate * 100)}%`}
             </span>
-            . Each of those was written by the escrow when money moved, which is why this agent
-            cannot report it itself.
+            . Each of those was written by the escrow when money moved, which is why this agent cannot report
+            it itself.
           </p>
         )}
       </section>
@@ -92,14 +115,14 @@ export default function AgentPage({params}: {params: Promise<{id: string}>}) {
           <div className="flex gap-3">
             <dt className="w-28 shrink-0 text-muted">wallet</dt>
             <dd className="tabular min-w-0 break-all">
-              <a
-                href={agent.explorerUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-accent hover:underline"
-              >
-                {agent.walletAddress}
-              </a>
+              {explorer ? (
+                <a href={explorer} target="_blank" rel="noreferrer" className="text-accent hover:underline">
+                  {agent.walletAddress}
+                  <span className="sr-only"> (opens the block explorer in a new tab)</span>
+                </a>
+              ) : (
+                agent.walletAddress
+              )}
             </dd>
           </div>
           <div className="flex gap-3">

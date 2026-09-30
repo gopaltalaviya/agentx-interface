@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import {use, useEffect, useState} from 'react';
-import {RunTrace} from '@/components/RunTrace';
-import {api, type RunDetail, type RunEvent, type RunStep} from '@/lib/api';
+import {useEffect, useState} from 'react';
+import {RunTrace, type TraceToken} from '@/components/RunTrace';
+import {ApiError, api, type RunDetail, type RunEvent, type RunStep} from '@/lib/api';
+import {safeHref} from '@/lib/links';
 
 /**
  * One run, after the fact.
@@ -24,22 +25,50 @@ const STEP_TONE: Record<RunStep['status'], string> = {
   failed: 'text-broken',
 };
 
-export default function RunPage({params}: {params: Promise<{id: string}>}) {
-  const {id} = use(params);
+export function RunView({runId}: {runId: string}) {
   const [run, setRun] = useState<RunDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [token, setToken] = useState<TraceToken | null>(null);
+
+  // Only for formatting the total; the trace still renders without it.
+  useEffect(() => {
+    const controller = new AbortController();
+    api
+      .network(controller.signal)
+      .then((n) => setToken(n.paymentToken))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
+    const controller = new AbortController();
+    setRun(null);
+    setError(null);
     api
-      .run(id)
+      .run(runId, controller.signal)
       .then(setRun)
-      .catch((err) => setError(err instanceof Error ? err.message : 'could not load this run'));
-  }, [id]);
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
+        setError(
+          err instanceof ApiError && err.code === 'NOT_FOUND'
+            ? 'There is no run at this address.'
+            : err instanceof Error
+              ? err.message
+              : 'could not load this run',
+        );
+      });
+    return () => controller.abort();
+  }, [runId]);
 
   if (error) {
     return (
       <div className="space-y-4">
-        <p className="rounded-md border border-broken/40 bg-broken/10 px-3 py-2 text-sm text-broken">{error}</p>
+        <p
+          role="alert"
+          className="rounded-md border border-broken/40 bg-broken/10 px-3 py-2 text-sm text-broken"
+        >
+          {error}
+        </p>
         <Link href="/runs" className="text-sm text-accent hover:underline">
           ← all runs
         </Link>
@@ -47,7 +76,13 @@ export default function RunPage({params}: {params: Promise<{id: string}>}) {
     );
   }
 
-  if (!run) return <p className="py-8 text-sm text-muted">Loading…</p>;
+  if (!run) {
+    return (
+      <p role="status" className="py-8 text-sm text-muted">
+        Loading…
+      </p>
+    );
+  }
 
   const events: RunEvent[] = run.events.map((e) => ({
     kind: e.kind as RunEvent['kind'],
@@ -77,7 +112,9 @@ export default function RunPage({params}: {params: Promise<{id: string}>}) {
       )}
 
       {run.error && (
-        <p className="rounded-md border border-broken/40 bg-broken/10 px-3 py-2 text-sm text-broken">{run.error}</p>
+        <p className="rounded-md border border-broken/40 bg-broken/10 px-3 py-2 text-sm text-broken">
+          {run.error}
+        </p>
       )}
 
       {run.steps.length > 0 && (
@@ -85,16 +122,14 @@ export default function RunPage({params}: {params: Promise<{id: string}>}) {
           <h2 className="mb-3 text-sm font-semibold">Steps</h2>
           <ol className="space-y-3">
             {run.steps.map((step, i) => (
-              <li key={i} className="text-sm">
+              <li key={`${i}-${step.capability}-${step.jobId ?? ''}`} className="text-sm">
                 <div className="flex flex-wrap items-baseline gap-x-3">
                   <span className="tabular text-muted">{i + 1}.</span>
                   <span className="font-medium">{step.capability}</span>
-                  <span className={`text-xs font-medium ${STEP_TONE[step.status] ?? 'text-muted'}`}>{step.status}</span>
-                  {step.explorerUrl && (
-                    <a href={step.explorerUrl} target="_blank" rel="noreferrer" className="text-xs text-accent hover:underline">
-                      transaction ↗
-                    </a>
-                  )}
+                  <span className={`text-xs font-medium ${STEP_TONE[step.status] ?? 'text-muted'}`}>
+                    {step.status}
+                  </span>
+                  <ExplorerLink url={step.explorerUrl} />
                 </div>
                 <p className="ml-6 mt-1 text-muted">{step.detail}</p>
                 {step.retriedAfter && (
@@ -108,8 +143,18 @@ export default function RunPage({params}: {params: Promise<{id: string}>}) {
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold">Trace</h2>
-        <RunTrace events={events} startedAt={Date.parse(run.startedAt)} />
+        <RunTrace events={events} startedAt={Date.parse(run.startedAt)} token={token} />
       </section>
     </div>
+  );
+}
+
+function ExplorerLink({url}: {url: string | undefined}) {
+  const href = safeHref(url);
+  if (!href) return null;
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className="text-xs text-accent hover:underline">
+      transaction ↗<span className="sr-only"> (opens the block explorer in a new tab)</span>
+    </a>
   );
 }

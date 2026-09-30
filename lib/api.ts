@@ -18,8 +18,9 @@
  * holding its own key, never by a browser.
  */
 
-export const API_URL =
-  process.env['NEXT_PUBLIC_API_URL']?.replace(/\/$/, '') ?? 'http://127.0.0.1:8080';
+// A production build without NEXT_PUBLIC_API_URL fails in next.config.mjs,
+// so this fallback only ever serves `next dev` and the tests.
+export const API_URL = process.env['NEXT_PUBLIC_API_URL']?.replace(/\/$/, '') ?? 'http://127.0.0.1:8080';
 
 export interface NetworkInfo {
   chainId: number;
@@ -39,6 +40,10 @@ export interface NetworkInfo {
   explorerBaseUrl: string | null;
   fastPathMaxDisplay: string;
   protocolFeeBps: number;
+  /** The smallest job the escrow accepts, in base units. A cheaper agent can never be hired. */
+  minJobAmount?: string;
+  minFee?: string;
+  windows?: {accept: number; work: number; review: number; dispute: number};
 }
 
 export interface AgentSummary {
@@ -80,7 +85,8 @@ export interface RunDetail extends RunSummary {
 
 export interface RunStep {
   capability: string;
-  status: 'settled' | 'disputed' | 'unrecoverable' | 'no-candidate' | 'budget-exceeded' | 'timeout' | 'failed';
+  status:
+    'settled' | 'disputed' | 'unrecoverable' | 'no-candidate' | 'budget-exceeded' | 'timeout' | 'failed';
   /** Set when a second worker delivered: why the first did not. */
   retriedAfter?: string;
   detail: string;
@@ -123,8 +129,8 @@ export class ApiError extends Error {
   }
 }
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {cache: 'no-store'});
+async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {cache: 'no-store', ...(signal ? {signal} : {})});
   if (!res.ok) {
     const problem = (await res.json().catch(() => ({}))) as {code?: string; detail?: string};
     throw new ApiError(problem.code ?? 'UNKNOWN', problem.detail ?? `${path} failed (${res.status})`);
@@ -141,17 +147,21 @@ export interface RegisteredAgent {
 }
 
 export const api = {
-  network: () => get<NetworkInfo>('/v1/network'),
+  network: (signal?: AbortSignal) => get<NetworkInfo>('/v1/network', signal),
 
-  agents: (q: {capability?: string; rank?: string; minScore?: number; limit?: number} = {}) => {
+  agents: (
+    q: {capability?: string; rank?: string; minScore?: number; limit?: number} = {},
+    signal?: AbortSignal,
+  ) => {
     const params = new URLSearchParams();
     for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== '') params.set(k, String(v));
-    return get<{agents: AgentSummary[]}>(`/v1/agents?${params}`).then((r) => r.agents);
+    return get<{agents: AgentSummary[]}>(`/v1/agents?${params}`, signal).then((r) => r.agents);
   },
 
-  agent: (agentId: number) => get<AgentSummary>(`/v1/agents/${agentId}`),
+  agent: (agentId: number, signal?: AbortSignal) => get<AgentSummary>(`/v1/agents/${agentId}`, signal),
 
-  run: (runId: string) => get<RunDetail>(`/v1/runs/${runId}`),
+  run: (runId: string, signal?: AbortSignal) =>
+    get<RunDetail>(`/v1/runs/${encodeURIComponent(runId)}`, signal),
 
   /**
    * The runs an orchestrator has made, newest first. Needs its key — a run
@@ -234,7 +244,7 @@ export function subscribeToRun(
   onEvent: (event: RunEvent) => void,
   onClose?: () => void,
 ): () => void {
-  const source = new EventSource(`${API_URL}/v1/runs/${runId}/events`);
+  const source = new EventSource(`${API_URL}/v1/runs/${encodeURIComponent(runId)}/events`);
 
   // Every kind the page renders. A kind missing here is not an error — it is
   // silence: an SSE event with no listener is dropped by the browser.

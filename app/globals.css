@@ -30,7 +30,12 @@ body {
 }
 
 body {
-  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -39,4 +44,21 @@ body {
 .tabular {
   font-family: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace;
   font-variant-numeric: tabular-nums;
+}
+
+/* A keyboard user must always see where they are. Mouse clicks do not show
+   the ring (focus-visible), so it costs the recording nothing. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }
