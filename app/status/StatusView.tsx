@@ -1,0 +1,325 @@
+'use client';
+
+import {useCallback, useEffect, useRef, useState} from 'react';
+import {Badge, StatusDot, type Tone} from '@/components/ui/Badge';
+import {Button} from '@/components/ui/Button';
+import {Card} from '@/components/ui/Card';
+import {Icon, type IconName} from '@/components/ui/Icon';
+import {PageHeader} from '@/components/ui/PageHeader';
+import {ErrorState, Loading, Skeleton} from '@/components/ui/States';
+import {ApiError, api, type ComponentStatus, type StatusReport} from '@/lib/api';
+import {relativeTime} from '@/lib/format';
+
+/**
+ * Is AGENTX working right now?
+ *
+ * A public page over `GET /v1/status`, which reports states and numbers only
+ * — never a host, URL or error message — so nothing here can leak where the
+ * infrastructure lives. It refreshes on its own while the tab is visible, and
+ * stops when it is not: a status page left open in a background tab should
+ * not be the API's busiest client.
+ *
+ * "Can't reach the API" is itself a status, and the most important one, so it
+ * is shown as one rather than as an error page.
+ */
+
+const REFRESH_MS = 15_000;
+
+const COMPONENTS: {key: keyof StatusReport['components']; name: string; icon: IconName; what: string}[] = [
+  {key: 'api', name: 'API', icon: 'bolt', what: 'Answers this site and every agent.'},
+  {key: 'database', name: 'Database', icon: 'coins', what: 'Holds agents, jobs, runs and reputation.'},
+  {
+    key: 'signer',
+    name: 'Signer',
+    icon: 'key',
+    what: "Signs agents' transactions, under their on-chain caps.",
+  },
+  {key: 'rpc', name: 'Chain connection', icon: 'link', what: 'Our connection to Monad.'},
+  {
+    key: 'indexer',
+    name: 'Indexer',
+    icon: 'activity',
+    what: 'Turns on-chain settlements into what this site shows.',
+  },
+];
+
+const TONE: Record<ComponentStatus, Tone> = {
+  up: 'settled',
+  degraded: 'refused',
+  down: 'broken',
+  unknown: 'neutral',
+};
+const WORD: Record<ComponentStatus, string> = {
+  up: 'Operational',
+  degraded: 'Degraded',
+  down: 'Down',
+  unknown: 'Not reported',
+};
+
+const OVERALL: Record<StatusReport['status'], {tone: Tone; title: string; body: string}> = {
+  operational: {
+    tone: 'settled',
+    title: 'All systems operational',
+    body: 'Agents can be hired and paid, and settlements reach the marketplace as they happen.',
+  },
+  degraded: {
+    tone: 'refused',
+    title: 'Partially degraded',
+    body: 'The site is up, but at least one part is slow or not reporting. Scores and runs may lag the chain.',
+  },
+  down: {
+    tone: 'broken',
+    title: 'Major outage',
+    body: 'The API cannot reach its database, so it can serve nothing. Funds in escrow are safe on chain.',
+  },
+};
+
+export function StatusView() {
+  const [report, setReport] = useState<StatusReport | null>(null);
+  const [failure, setFailure] = useState<'unreachable' | 'unsupported' | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [lastTry, setLastTry] = useState<number | null>(null);
+  const [, tick] = useState(0);
+  const inFlight = useRef<AbortController | null>(null);
+
+  const load = useCallback(async () => {
+    inFlight.current?.abort();
+    const controller = new AbortController();
+    inFlight.current = controller;
+    setLoading(true);
+    try {
+      setReport(await api.status(controller.signal));
+      setFailure(null);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      // An API that predates /v1/status answers 404: it is up, just older.
+      setFailure(err instanceof ApiError && err.code === 'NOT_FOUND' ? 'unsupported' : 'unreachable');
+      setReport(null);
+    } finally {
+      if (!controller.signal.aborted) {
+        setLoading(false);
+        setLastTry(Date.now());
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const startTimer = () => {
+      if (!timer) timer = setInterval(() => void load(), REFRESH_MS);
+    };
+    const stopTimer = () => {
+      if (timer) clearInterval(timer);
+      timer = null;
+    };
+    const onVisibility = () => {
+      if (document.hidden) stopTimer();
+      else {
+        void load();
+        startTimer();
+      }
+    };
+    startTimer();
+    document.addEventListener('visibilitychange', onVisibility);
+    // Keeps "checked 12 seconds ago" honest between refreshes.
+    const clock = setInterval(() => tick((n) => n + 1), 5_000);
+    return () => {
+      stopTimer();
+      clearInterval(clock);
+      document.removeEventListener('visibilitychange', onVisibility);
+      inFlight.current?.abort();
+    };
+  }, [load]);
+
+  const overall = report ? OVERALL[report.status] : null;
+
+  return (
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow="Status"
+        title="System status"
+        description="Whether AGENTX is working right now. This page refreshes itself every 15 seconds while it is open."
+        actions={
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void load()}
+            loading={loading && report !== null}
+          >
+            {!(loading && report !== null) && <Icon name="refresh" className="size-3.5" />}
+            Refresh
+          </Button>
+        }
+      />
+
+      {!report && !failure && (
+        <Loading label="Checking status">
+          <div className="space-y-4">
+            <Skeleton className="h-24 rounded-xl" />
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <Skeleton key={i} className="h-24 rounded-xl" />
+              ))}
+            </div>
+          </div>
+        </Loading>
+      )}
+
+      {failure === 'unreachable' && (
+        <ErrorState
+          title="The API cannot be reached"
+          action={
+            <Button variant="secondary" size="sm" onClick={() => void load()} loading={loading}>
+              Try again
+            </Button>
+          }
+        >
+          This page, the marketplace and runs all depend on it. Anything already locked in escrow is safe on
+          chain and has a permissionless way out — the contract does not need this API to refund or settle.
+        </ErrorState>
+      )}
+
+      {failure === 'unsupported' && (
+        <ErrorState title="This API does not report its status">
+          It answers, but predates the status endpoint. Everything else on the site may still work.
+        </ErrorState>
+      )}
+
+      {report && overall && (
+        <>
+          <section
+            aria-live="polite"
+            className={
+              'animate-enter relative overflow-hidden rounded-xl border p-5 sm:p-6 ' +
+              (overall.tone === 'settled'
+                ? 'border-settled/30 bg-settled/[0.06]'
+                : overall.tone === 'refused'
+                  ? 'border-refused/30 bg-refused/[0.06]'
+                  : 'border-broken/30 bg-broken/[0.06]')
+            }
+          >
+            <div className="flex flex-wrap items-center gap-4">
+              <span
+                className={
+                  'grid size-11 place-items-center rounded-full ' +
+                  (overall.tone === 'settled'
+                    ? 'bg-settled/15 text-settled'
+                    : overall.tone === 'refused'
+                      ? 'bg-refused/15 text-refused'
+                      : 'bg-broken/15 text-broken')
+                }
+              >
+                <Icon name={report.status === 'operational' ? 'check' : 'alert'} className="size-5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-lg font-semibold tracking-tight">{overall.title}</h2>
+                <p className="text-sm text-muted">{overall.body}</p>
+              </div>
+              <p className="text-xs text-muted">
+                checked{' '}
+                <time dateTime={report.checkedAt} title={new Date(report.checkedAt).toLocaleString()}>
+                  {relativeTime(report.checkedAt)}
+                </time>
+              </p>
+            </div>
+          </section>
+
+          <section aria-label="Components">
+            <ul className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {COMPONENTS.map((c, i) => {
+                const state = report.components[c.key];
+                return (
+                  <li
+                    key={c.key}
+                    style={{'--i': i} as React.CSSProperties}
+                    className="flex gap-3 rounded-xl border border-edge bg-surface/80 p-4 backdrop-blur-sm"
+                  >
+                    <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-edge bg-raised text-muted">
+                      <Icon name={c.icon} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium">{c.name}</span>
+                        <Badge tone={TONE[state]} dot>
+                          {WORD[state]}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 text-xs leading-relaxed text-muted">{c.what}</p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+
+          {report.chains.map((chain) => (
+            <Card
+              key={chain.chainId}
+              title={
+                <span className="flex items-center gap-2">
+                  {chain.name}
+                  {chain.testnet && <Badge tone="chain">testnet</Badge>}
+                </span>
+              }
+              description="How closely this site follows the chain. The indexer stays a few blocks behind the head on purpose, so a reorganised block is never shown."
+            >
+              <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <ChainFigure
+                  label="Chain head"
+                  value={chain.headBlock?.toLocaleString('en') ?? '—'}
+                  state={chain.rpc}
+                />
+                <ChainFigure
+                  label="Indexed to"
+                  value={chain.indexer.indexedBlock?.toLocaleString('en') ?? '—'}
+                  state={chain.indexer.status}
+                />
+                <ChainFigure
+                  label="Behind by"
+                  value={
+                    chain.indexer.lagBlocks === null
+                      ? '—'
+                      : `${chain.indexer.lagBlocks.toLocaleString('en')} blocks`
+                  }
+                />
+                <ChainFigure
+                  label="Last indexed"
+                  value={chain.indexer.lastIndexedAt ? relativeTime(chain.indexer.lastIndexedAt) : 'never'}
+                />
+              </dl>
+            </Card>
+          ))}
+
+          {report.build && (
+            <p className="tabular flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+              <span>
+                {report.build.service} v{report.build.version}
+              </span>
+              <span>commit {report.build.commit}</span>
+              {report.build.builtAt && <span>built {new Date(report.build.builtAt).toLocaleString()}</span>}
+            </p>
+          )}
+        </>
+      )}
+
+      {lastTry && (
+        <p className="sr-only" role="status">
+          Status last checked {new Date(lastTry).toLocaleTimeString()}.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ChainFigure({label, value, state}: {label: string; value: string; state?: ComponentStatus}) {
+  return (
+    <div className="rounded-lg border border-edge bg-ink/50 px-3 py-2.5">
+      <dt className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted">
+        {state && <StatusDot tone={TONE[state]} />}
+        {label}
+      </dt>
+      <dd className="tabular mt-1 font-semibold">{value}</dd>
+    </div>
+  );
+}

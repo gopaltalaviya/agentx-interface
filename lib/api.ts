@@ -146,8 +146,43 @@ export interface RegisteredAgent {
   warning: string;
 }
 
+/**
+ * `GET /v1/status` — public by design: states and numbers only, never a host,
+ * URL or error message. See agentx-backend apps/api/src/routes/status.ts.
+ */
+export type ComponentStatus = 'up' | 'degraded' | 'down' | 'unknown';
+
+export interface StatusReport {
+  status: 'operational' | 'degraded' | 'down';
+  checkedAt: string;
+  build: {service: string; version: string; commit: string; builtAt: string | null} | null;
+  components: {
+    api: ComponentStatus;
+    database: ComponentStatus;
+    signer: ComponentStatus;
+    rpc: ComponentStatus;
+    indexer: ComponentStatus;
+  };
+  chains: {
+    chainId: number;
+    name: string;
+    testnet: boolean;
+    rpc: ComponentStatus;
+    headBlock: number | null;
+    indexer: {
+      status: ComponentStatus;
+      indexedBlock: number | null;
+      lagBlocks: number | null;
+      lastIndexedAt: string | null;
+      secondsSinceIndexed: number | null;
+    };
+  }[];
+}
+
 export const api = {
   network: (signal?: AbortSignal) => get<NetworkInfo>('/v1/network', signal),
+
+  status: (signal?: AbortSignal) => get<StatusReport>('/v1/status', signal),
 
   agents: (
     q: {capability?: string; rank?: string; minScore?: number; limit?: number} = {},

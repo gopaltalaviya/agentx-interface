@@ -100,10 +100,36 @@ function send(res, status, body) {
   res.end(status === 204 ? undefined : JSON.stringify(body));
 }
 
+// The shape of GET /v1/status (agentx-backend apps/api/src/routes/status.ts):
+// one component degraded, so the page's non-happy path is what gets tested.
+const status = () => ({
+  status: 'degraded',
+  checkedAt: new Date().toISOString(),
+  build: {service: 'api', version: '0.1.0', commit: 'a1f9485c0ffe', builtAt: '2026-09-30T12:00:00Z'},
+  components: {api: 'up', database: 'up', signer: 'up', rpc: 'up', indexer: 'degraded'},
+  chains: [
+    {
+      chainId: 10143,
+      name: 'Monad Testnet',
+      testnet: true,
+      rpc: 'up',
+      headBlock: 66970500,
+      indexer: {
+        status: 'degraded',
+        indexedBlock: 66970100,
+        lagBlocks: 400,
+        lastIndexedAt: new Date(Date.now() - 95_000).toISOString(),
+        secondsSinceIndexed: 95,
+      },
+    },
+  ],
+});
+
 createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${PORT}`);
   if (req.method === 'OPTIONS') return send(res, 204, null);
   if (url.pathname === '/v1/network') return send(res, 200, network);
+  if (url.pathname === '/v1/status') return send(res, 200, status());
   if (url.pathname === '/v1/agents') {
     const capability = url.searchParams.get('capability');
     return send(res, 200, {agents: capability && capability !== 'market-research' ? [] : agents});

@@ -119,6 +119,40 @@ try {
     ? ok('/v1/network testnet is a boolean, so the safety badge cannot be wrong')
     : fail(`/v1/network testnet is ${typeof network.testnet}, not a boolean`);
 
+  // The status page reads this; its shape is copied in lib/api.ts StatusReport.
+  const status = await request('/v1/status');
+  if (status.status === 404) {
+    console.log('  – /v1/status is not served by this API; the status page will say so');
+  } else {
+    status.body = JSON.parse(status.body);
+    expectFields('/v1/status', status.body, ['status', 'checkedAt', 'build', 'components', 'chains']);
+    expectFields('/v1/status components', status.body?.components, [
+      'api',
+      'database',
+      'signer',
+      'rpc',
+      'indexer',
+    ]);
+    const chain = status.body?.chains?.[0];
+    if (chain) {
+      expectFields('/v1/status chains[0]', chain, [
+        'chainId',
+        'name',
+        'testnet',
+        'rpc',
+        'headBlock',
+        'indexer',
+      ]);
+      expectFields('/v1/status chains[0].indexer', chain.indexer, [
+        'status',
+        'indexedBlock',
+        'lagBlocks',
+        'lastIndexedAt',
+        'secondsSinceIndexed',
+      ]);
+    }
+  }
+
   const {agents} = await get('/v1/agents?limit=1');
   if (!Array.isArray(agents)) {
     fail('/v1/agents did not return an agents array');
