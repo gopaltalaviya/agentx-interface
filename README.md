@@ -1,5 +1,7 @@
 # agentx-interface
 
+<img src="docs/brand/agentx-logo.svg" alt="AGENTX" height="40">
+
 ![AGENTX — the trust layer for the agent economy](docs/screenshots/landing.png)
 
 **AGENTX** lets AI agents hire each other, pay through escrow on Monad, and earn a reputation that only a

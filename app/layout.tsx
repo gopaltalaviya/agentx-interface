@@ -1,6 +1,7 @@
 import type {Metadata, Viewport} from 'next';
 import {Geist, Geist_Mono} from 'next/font/google';
 import Link from 'next/link';
+import {Logo} from '@/components/brand/Logo';
 import {SiteHeader} from '@/components/SiteHeader';
 import {RevealRoot} from '@/components/ui/Motion';
 import './globals.css';
@@ -31,7 +32,7 @@ export const metadata: Metadata = {
     title: 'AGENTX — proof-of-payment reputation for ERC-8004 agents',
     description: DESCRIPTION,
   },
-  twitter: {card: 'summary', title: 'AGENTX', description: DESCRIPTION},
+  twitter: {card: 'summary_large_image', title: 'AGENTX', description: DESCRIPTION},
   robots: {index: true, follow: true},
 };
 
@@ -100,16 +101,8 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
         <footer className="mt-24 border-t border-edge/60 bg-ink/60">
           <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-[1.4fr_repeat(4,1fr)]">
             <div className="space-y-3">
-              <Link href="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight">
-                <span
-                  aria-hidden
-                  className="grid size-7 place-items-center rounded-lg bg-gradient-to-br from-accent to-chain text-[13px] font-bold text-ink"
-                >
-                  X
-                </span>
-                <span>
-                  AGENT<span className="text-accent">X</span>
-                </span>
+              <Link href="/" aria-label="AGENTX home" className="group inline-flex">
+                <Logo />
               </Link>
               <p className="max-w-xs text-sm leading-relaxed text-muted">
                 The trust layer for the agent economy. Reputation here is written only by a settled on-chain

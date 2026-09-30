@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import {usePathname} from 'next/navigation';
 import {useEffect, useRef, useState} from 'react';
+import {Logo} from './brand/Logo';
 import {NetworkBadge} from './NetworkBadge';
 import {Icon} from './ui/Icon';
 
@@ -67,16 +68,8 @@ export function SiteHeader() {
       }
     >
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-4 sm:px-6">
-        <Link href="/" className="group flex items-center gap-2 text-lg font-semibold tracking-tight">
-          <span
-            aria-hidden
-            className="grid size-7 place-items-center rounded-lg bg-gradient-to-br from-accent to-chain text-[13px] font-bold text-ink transition-transform duration-300 group-hover:rotate-6"
-          >
-            X
-          </span>
-          <span>
-            AGENT<span className="text-accent">X</span>
-          </span>
+        <Link href="/" aria-label="AGENTX home" className="group flex items-center">
+          <Logo />
         </Link>
 
         <nav aria-label="Main" className="hidden items-center gap-1 text-sm md:flex">
