@@ -28,7 +28,9 @@ All of them are compiled into the client bundle, so none may hold a secret.
 
 | Route          | What it is for                                                                                                                                                                           |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`            | The live demo. One sentence in; agents plan, hire, judge and pay, with an explorer link on every on-chain line.                                                                          |
+| `/`            | The product page: the problem, how it works, live figures and deployed contracts from the chain, features, developer examples, security, roadmap, FAQ.                                   |
+| `/demo`        | The live demo. One sentence in; agents plan, hire, judge and pay, with an explorer link on every on-chain line.                                                                          |
+| `/docs/*`      | In-app documentation: introduction, quickstart, how it works, build an agent, MCP, HTTP API, security model, FAQ.                                                                        |
 | `/agents`      | The marketplace, with the four ranking modes.                                                                                                                                            |
 | `/agents/[id]` | One agent, and what its reputation is actually made of. A non-numeric id is a 404.                                                                                                       |
 | `/register`    | Register an agent: an ERC-8004 identity from the visitor's wallet, then the AGENTX record and its one-time key.                                                                          |

@@ -35,6 +35,45 @@ export const metadata: Metadata = {
   robots: {index: true, follow: true},
 };
 
+const FOOTER: {title: string; links: [string, string][]}[] = [
+  {
+    title: 'Product',
+    links: [
+      ['Live demo', '/demo'],
+      ['Marketplace', '/agents'],
+      ['Register an agent', '/register'],
+      ['Runs', '/runs'],
+    ],
+  },
+  {
+    title: 'Developers',
+    links: [
+      ['Documentation', '/docs'],
+      ['Quickstart', '/docs/quickstart'],
+      ['Build an agent', '/docs/build-an-agent'],
+      ['MCP server', '/docs/mcp'],
+      ['HTTP API', '/docs/api'],
+    ],
+  },
+  {
+    title: 'Trust',
+    links: [
+      ['How it works', '/docs/concepts'],
+      ['Security', '/docs/security'],
+      ['System status', '/status'],
+      ['FAQ', '/docs/faq'],
+    ],
+  },
+  {
+    title: 'Source',
+    links: [
+      ['Contracts', 'https://github.com/gopaltalaviya/agentx-contracts'],
+      ['Backend', 'https://github.com/gopaltalaviya/agentx-backend'],
+      ['Interface', 'https://github.com/gopaltalaviya/agentx-interface'],
+    ],
+  },
+];
+
 export const viewport: Viewport = {themeColor: '#07090d', colorScheme: 'dark'};
 
 export default function RootLayout({children}: {children: React.ReactNode}) {
@@ -58,23 +97,56 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
           {children}
         </main>
 
-        <footer className="border-t border-edge/60">
-          <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-8 text-xs text-muted sm:flex-row sm:items-center sm:justify-between sm:px-6">
-            <p>
-              Reputation here is written only by a settled on-chain payment. Nothing on this page is
-              self-reported.
+        <footer className="mt-24 border-t border-edge/60 bg-ink/60">
+          <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-[1.4fr_repeat(4,1fr)]">
+            <div className="space-y-3">
+              <Link href="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+                <span
+                  aria-hidden
+                  className="grid size-7 place-items-center rounded-lg bg-gradient-to-br from-accent to-chain text-[13px] font-bold text-ink"
+                >
+                  X
+                </span>
+                <span>
+                  AGENT<span className="text-accent">X</span>
+                </span>
+              </Link>
+              <p className="max-w-xs text-sm leading-relaxed text-muted">
+                The trust layer for the agent economy. Reputation here is written only by a settled on-chain
+                payment — nothing on this site is self-reported.
+              </p>
+            </div>
+            {FOOTER.map((col) => (
+              <nav key={col.title} aria-label={col.title} className="space-y-3 text-sm">
+                <p className="font-medium">{col.title}</p>
+                <ul className="space-y-2 text-muted">
+                  {col.links.map(([label, href]) => (
+                    <li key={href}>
+                      {href.startsWith('http') ? (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="transition-colors hover:text-text"
+                        >
+                          {label} ↗
+                        </a>
+                      ) : (
+                        <Link href={href} className="transition-colors hover:text-text">
+                          {label}
+                        </Link>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            ))}
+          </div>
+          <div className="border-t border-edge/60">
+            <p className="mx-auto max-w-6xl px-4 py-5 text-xs text-muted sm:px-6">
+              Built on ERC-8004 and settled on Monad. Testnet today: nothing on this network has monetary
+              value.
             </p>
-            <nav aria-label="Footer" className="flex gap-4">
-              <Link href="/agents" className="hover:text-text">
-                Marketplace
-              </Link>
-              <Link href="/register" className="hover:text-text">
-                Register
-              </Link>
-              <Link href="/status" className="hover:text-text">
-                Status
-              </Link>
-            </nav>
           </div>
         </footer>
       </body>

@@ -16,9 +16,9 @@ import {Icon} from './ui/Icon';
  */
 
 const LINKS = [
-  {href: '/', label: 'Demo', match: (p: string) => p === '/'},
+  {href: '/demo', label: 'Live demo', match: (p: string) => p.startsWith('/demo')},
   {href: '/agents', label: 'Marketplace', match: (p: string) => p.startsWith('/agents')},
-  {href: '/register', label: 'Register', match: (p: string) => p.startsWith('/register')},
+  {href: '/docs', label: 'Docs', match: (p: string) => p.startsWith('/docs')},
   {href: '/runs', label: 'Runs', match: (p: string) => p.startsWith('/runs')},
   {href: '/status', label: 'Status', match: (p: string) => p.startsWith('/status')},
 ];
@@ -108,6 +108,13 @@ export function SiteHeader() {
             because it is the one fact a viewer must never have to guess. */}
         <div className="ml-auto flex items-center gap-2">
           <NetworkBadge />
+          <Link
+            href="/register"
+            className="hidden h-8 items-center gap-1.5 rounded-lg bg-text px-3 text-xs font-medium text-ink transition-[transform,background-color] duration-200 hover:bg-white active:scale-[0.97] lg:inline-flex"
+          >
+            Register an agent
+            <Icon name="arrowRight" className="size-3" />
+          </Link>
           <button
             ref={toggle}
             type="button"
@@ -129,7 +136,10 @@ export function SiteHeader() {
         className="border-t border-edge bg-ink/95 backdrop-blur-xl md:hidden"
       >
         <nav aria-label="Main" className="mx-auto grid max-w-6xl gap-1 px-4 py-3 animate-enter">
-          {LINKS.map((link) => {
+          {[
+            ...LINKS,
+            {href: '/register', label: 'Register an agent', match: (p: string) => p.startsWith('/register')},
+          ].map((link) => {
             const active = link.match(pathname);
             return (
               <Link

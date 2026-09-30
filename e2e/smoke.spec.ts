@@ -12,9 +12,47 @@ function watchConsole(page: Page): string[] {
   return errors;
 }
 
+test('the landing page makes its case and leads to the demo and the docs', async ({page}) => {
+  await page.goto('/');
+  await expect(page.getByRole('heading', {level: 1})).toContainText('trust layer for the agent economy');
+  await expect(page.getByRole('link', {name: /Watch agents pay each other/})).toHaveAttribute(
+    'href',
+    '/demo',
+  );
+  await expect(page.getByRole('link', {name: 'Read the docs'})).toHaveAttribute('href', '/docs');
+  // Live figures come from the API, and the deployed escrow links to the explorer.
+  await expect(page.getByText('Jobs settled on chain')).toBeVisible();
+  await expect(page.getByRole('link', {name: /TaskEscrow/})).toHaveAttribute('href', /^https:\/\//);
+  // The FAQ opens.
+  await page.getByText('Is this real money?').click();
+  await expect(page.getByText(/Monad testnet with a test stablecoin/)).toBeVisible();
+});
+
+test('every docs page renders, and the sidebar marks where you are', async ({page}) => {
+  for (const [path, title] of [
+    ['/docs', 'Introduction'],
+    ['/docs/quickstart', 'Quickstart'],
+    ['/docs/concepts', 'How it works'],
+    ['/docs/build-an-agent', 'Build an agent'],
+    ['/docs/mcp', 'MCP server'],
+    ['/docs/api', 'HTTP API'],
+    ['/docs/security', 'Security model'],
+    ['/docs/faq', 'FAQ'],
+  ] as const) {
+    await page.goto(path);
+    await expect(page.getByRole('heading', {level: 1})).toHaveText(title);
+    await expect(
+      page
+        .getByRole('navigation', {name: 'Documentation'})
+        .first()
+        .getByRole('link', {name: title, exact: true}),
+    ).toHaveAttribute('aria-current', 'page');
+  }
+});
+
 test('the demo page renders with labelled inputs and the network badge', async ({page}) => {
   const errors = watchConsole(page);
-  await page.goto('/');
+  await page.goto('/demo');
   await expect(page.getByRole('heading', {level: 1})).toContainText('One sentence');
   await expect(page.getByLabel('Goal')).toBeVisible();
   await expect(page.getByLabel('Orchestrator API key')).toBeVisible();
@@ -110,7 +148,19 @@ test('the status page says what is degraded, in words', async ({page}) => {
 
 test('the menu works at phone width, and no page scrolls sideways', async ({page}) => {
   await page.setViewportSize({width: 375, height: 800});
-  for (const path of ['/', '/agents', '/agents/1', '/register', '/runs', `/runs/${RUN_ID}`, '/status']) {
+  for (const path of [
+    '/',
+    '/demo',
+    '/agents',
+    '/agents/1',
+    '/register',
+    '/runs',
+    `/runs/${RUN_ID}`,
+    '/status',
+    '/docs',
+    '/docs/concepts',
+    '/docs/api',
+  ]) {
     await page.goto(path);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, `${path} overflows by ${overflow}px`).toBeLessThanOrEqual(0);
@@ -127,8 +177,8 @@ test('the menu works at phone width, and no page scrolls sideways', async ({page
 test('with reduced motion, every revealed section is fully visible without scrolling', async ({page}) => {
   await page.emulateMedia({reducedMotion: 'reduce'});
   await page.goto('/');
-  const how = page.getByRole('heading', {name: 'Three steps, each one on chain'});
-  await expect(how).toBeAttached();
+  const problem = page.getByRole('heading', {name: /Agents can reason/});
+  await expect(problem).toBeAttached();
   const hidden = await page.evaluate(
     () =>
       [...document.querySelectorAll('[data-reveal]')].filter((el) => getComputedStyle(el).opacity !== '1')

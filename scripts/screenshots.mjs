@@ -22,7 +22,9 @@ if (!RUN_ID) {
 }
 
 const pages = [
-  {name: 'demo', path: '/'},
+  {name: 'landing', path: '/', wait: 'text=Jobs settled on chain'},
+  {name: 'demo', path: '/demo'},
+  {name: 'docs', path: '/docs/concepts'},
   {name: 'marketplace', path: '/agents', wait: 'text=score'},
   {name: 'agent-profile', path: `/agents/${AGENT_ID}`, wait: 'text=What this score is made of'},
   {name: 'register', path: '/register'},
