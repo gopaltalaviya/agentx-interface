@@ -91,6 +91,22 @@ body {
   background: color-mix(in oklab, var(--color-accent) 35%, transparent);
 }
 
+/* A link inside running text is underlined, not only coloured: colour alone
+   fails anyone who cannot tell the accent from the text (WCAG 1.4.1). Links
+   that stand alone — buttons, cards, navigation — are not inside p or li. */
+p a:not([class*='button']),
+li > p a,
+dd a,
+.prose-doc a {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, currentColor 45%, transparent);
+  text-underline-offset: 3px;
+}
+p a:hover,
+.prose-doc a:hover {
+  text-decoration-color: currentColor;
+}
+
 /* Monospace for anything on-chain. A hash or an amount that reflows between
    renders reads as instability in the thing being demonstrated. */
 .tabular {
@@ -427,10 +443,6 @@ summary::-webkit-details-marker {
 }
 .prose-doc a {
   color: var(--color-accent);
-  text-underline-offset: 3px;
-}
-.prose-doc a:hover {
-  text-decoration: underline;
 }
 .prose-doc :not(pre) > code {
   font-family: var(--font-mono);

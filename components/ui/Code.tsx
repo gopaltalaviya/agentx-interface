@@ -72,7 +72,13 @@ export function CodeBlock({
         <span className="tabular truncate text-[11px] text-muted">{title ?? ''}</span>
         <CopyButton value={code} label="Copy code" />
       </div>
-      <pre className="tabular overflow-x-auto p-4 text-[12.5px] leading-relaxed text-text/90">
+      {/* Focusable, so a keyboard user can scroll a long line sideways (WCAG 2.1.1). */}
+      <pre
+        tabIndex={0}
+        role="region"
+        aria-label={typeof title === 'string' && title ? `Code: ${title}` : 'Code'}
+        className="tabular overflow-x-auto p-4 text-[12.5px] leading-relaxed text-text/90"
+      >
         <code>
           <Highlighted code={code} />
         </code>
@@ -131,6 +137,9 @@ export function CodeTabs({tabs}: {tabs: {label: string; file: string; code: stri
         <div className="tabular border-b border-edge/40 px-4 py-1.5 text-[11px] text-muted">{tab.file}</div>
         <pre
           key={active}
+          tabIndex={0}
+          role="region"
+          aria-label={`Code: ${tab.file}`}
           className="tabular animate-enter overflow-x-auto p-5 text-[12.5px] leading-relaxed text-text/90"
         >
           <code>

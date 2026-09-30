@@ -24,6 +24,10 @@ const config = [
       'react-hooks/exhaustive-deps': 'error',
       '@typescript-eslint/no-unused-vars': ['error', {argsIgnorePattern: '^_', varsIgnorePattern: '^_'}],
       'no-console': ['error', {allow: ['warn', 'error']}],
+      // A code sample that scrolls sideways must be reachable by keyboard
+      // (WCAG 2.1.1; axe: scrollable-region-focusable), so it is a focusable
+      // role="region". The rule's default allows only tabpanel.
+      'jsx-a11y/no-noninteractive-tabindex': ['error', {roles: ['tabpanel', 'region'], tags: []}],
     },
   },
   {

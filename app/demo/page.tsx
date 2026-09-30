@@ -134,6 +134,17 @@ export default function DemoPage() {
         (event) => setEvents((prev) => [...prev, event]),
         () => {
           setFinished(true);
+          // The figures at the top are the marketplace's, written by the
+          // indexer from settlements a few blocks behind the head — so read
+          // them again shortly after, and watch them count up to this run.
+          for (const delay of [4_000, 12_000]) {
+            setTimeout(() => {
+              api
+                .agents({rank: 'balanced', limit: 50})
+                .then(setAgents)
+                .catch(() => undefined);
+            }, delay);
+          }
           // Read the finished run once the stream closes: the row carries the
           // synthesised answer and the per-step outcomes, which the event
           // trace deliberately does not repeat.
