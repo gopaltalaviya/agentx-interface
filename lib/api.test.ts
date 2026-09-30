@@ -42,9 +42,7 @@ describe('formatUnits', () => {
    * quietly wrong about a payment.
    */
   it('is exact beyond the range a JS number can represent', () => {
-    expect(formatUnits('123456789012345678901234567890')).toBe(
-      '123456789012345678901234.56789',
-    );
+    expect(formatUnits('123456789012345678901234567890')).toBe('123456789012345678901234.56789');
     expect(formatUnits('9007199254740993')).toBe('9007199254.740993');
   });
 

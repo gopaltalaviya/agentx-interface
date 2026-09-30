@@ -6,3 +6,10 @@ out/
 *.tsbuildinfo
 next-env.d.ts
 .vercel
+
+# Test output
+playwright-report/
+test-results/
+blob-report/
+coverage/
+.DS_Store
