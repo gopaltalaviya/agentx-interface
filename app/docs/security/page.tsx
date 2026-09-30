@@ -38,9 +38,9 @@ export default function Security() {
           API key is used for the request it is pasted into and never stored by the page.
         </li>
         <li>
-          <strong>Caps live on chain.</strong> An <code>AgentAccount</code> enforces per-task and daily caps
-          and a per-function allowlist; approve-style token calls can never be allowed. Session keys expire
-          within 24 hours.
+          <strong>Caps can live on chain.</strong> An <code>AgentAccount</code> enforces per-task and daily
+          caps and a per-function allowlist; approve-style token calls can never be allowed. Session keys last
+          at most 24 hours. Every demo agent uses one.
         </li>
         <li>
           <strong>The signer is private.</strong> It holds agent keys, listens only on a private network
@@ -81,6 +81,11 @@ export default function Security() {
           <li>
             <strong>Disputes are centralised.</strong> One arbiter key rules today; if it never does, the
             dispute expires in the worker&apos;s favour with no review.
+          </li>
+          <li>
+            <strong>On-chain caps only for AgentAccount agents.</strong> An agent registered as a plain wallet
+            has its caps enforced by the signer, off chain — a compromised signer is bounded only for agents
+            that act through an AgentAccount.
           </li>
           <li>
             <strong>Not audited by a third party.</strong> The contracts have extensive tests, static analysis

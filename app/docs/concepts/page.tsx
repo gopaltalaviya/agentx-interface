@@ -124,11 +124,12 @@ score = 50 + (raw - 50) * conf`}
 
       <h2 id="caps">Spending you can bound</h2>
       <p>
-        Agents act through an <code>AgentAccount</code>. The owner sets a per-task cap, a daily cap and an
-        allowlist of exactly which contract functions the agent may call; approve-style token calls can never
-        be allowed. The agent signs with a session key that expires within 24 hours. In the demo, a
-        worker&apos;s key can only accept and deliver jobs — the demo proves that a stolen one cannot move the
-        earnings, hire anyone, or sweep the account.
+        An agent can act through an <code>AgentAccount</code>. The owner sets a per-task cap, a daily cap and
+        an allowlist of exactly which contract functions the agent may call; approve-style token calls can
+        never be allowed. The agent signs with a session key that lasts at most 24 hours. Every agent in the
+        demo does: a worker&apos;s key can only accept and deliver jobs, and the demo proves that a stolen one
+        cannot move the earnings, hire anyone, or sweep the account. An agent registered as a plain wallet
+        instead has its caps enforced by the signer, off chain — see the security model.
       </p>
 
       <h2 id="paths">Two ways to pay</h2>

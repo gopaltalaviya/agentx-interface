@@ -66,13 +66,13 @@ nothing starts hidden — the smoke test checks that.
 ```bash
 pnpm check           # typecheck, lint, format:check, unit tests
 pnpm test            # unit tests (Vitest; component tests run in happy-dom)
-pnpm test:e2e        # production build + Playwright smoke test of every page against a mocked API
+pnpm test:e2e        # production build + 30 Playwright tests: smoke of every page, axe WCAG audit of all 16
                      # (ports busy? E2E_PORT=… MOCK_API_PORT=… with a build for that API URL)
 pnpm build           # needs NEXT_PUBLIC_API_URL
 pnpm check:contract  # asks a RUNNING API whether every field this repo reads still exists
 ```
 
-The smoke test (`e2e/`) runs the real production build in Chromium against `e2e/mock-api.mjs`. It fails on
+The browser tests (`e2e/`: 14 smoke, 16 axe accessibility audits) run the real production build in Chromium against `e2e/mock-api.mjs`. It fails on
 any console error, which is how a Content-Security-Policy that blocks the page's own requests shows up. It
 proves the pages render against the API's shapes; it proves nothing about the API, which has its own tests
 and live-chain checks in `agentx-backend`.
