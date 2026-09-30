@@ -10,7 +10,7 @@ import {Monogram} from '@/components/ui/Monogram';
 import {CountUp} from '@/components/ui/Motion';
 import {PageHeader} from '@/components/ui/PageHeader';
 import {ErrorState, Loading, Skeleton} from '@/components/ui/States';
-import {ApiError, api, type AgentSummary} from '@/lib/api';
+import {ApiError, api, type AgentSummary, type NetworkInfo} from '@/lib/api';
 import {safeHref} from '@/lib/links';
 
 /**
@@ -25,6 +25,17 @@ export function AgentView({agentId}: {agentId: number}) {
   const [agent, setAgent] = useState<AgentSummary | null>(null);
   const [error, setError] = useState<{message: string; missing: boolean} | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [network, setNetwork] = useState<NetworkInfo | null>(null);
+
+  // For linking the ERC-8004 identity to its registry; the page works without it.
+  useEffect(() => {
+    const c = new AbortController();
+    api
+      .network(c.signal)
+      .then(setNetwork)
+      .catch(() => undefined);
+    return () => c.abort();
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -101,6 +112,9 @@ export function AgentView({agentId}: {agentId: number}) {
 
   const attempts = agent.completed + agent.failed;
   const explorer = safeHref(agent.explorerUrl);
+  const registry = network?.erc8004?.identityRegistry;
+  const registryHref =
+    registry && network?.explorerBaseUrl ? safeHref(`${network.explorerBaseUrl}/address/${registry}`) : null;
   const rate = agent.successRate === null ? null : Math.round(agent.successRate * 100);
 
   return (
@@ -197,6 +211,29 @@ export function AgentView({agentId}: {agentId: number}) {
                 agent.walletAddress
               )}
               <CopyButton value={agent.walletAddress} label="Copy wallet address" />
+            </dd>
+          </div>
+          <div className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:gap-3">
+            <dt className="w-32 shrink-0 text-muted">ERC-8004 identity</dt>
+            <dd className="tabular flex min-w-0 items-center gap-2">
+              {agent.chainAgentId !== null && agent.chainAgentId !== undefined ? (
+                <>
+                  <span>#{String(agent.chainAgentId)}</span>
+                  {registryHref && (
+                    <a
+                      href={registryHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-accent hover:underline"
+                    >
+                      registry ↗
+                      <span className="sr-only"> (opens the identity registry on the block explorer)</span>
+                    </a>
+                  )}
+                </>
+              ) : (
+                <span className="text-muted">not registered on chain — cannot be hired</span>
+              )}
             </dd>
           </div>
           <div className="flex flex-col gap-1 py-3 last:pb-0 sm:flex-row sm:items-center sm:gap-3">

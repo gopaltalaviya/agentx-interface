@@ -84,6 +84,7 @@ test('an agent profile renders, and a hostile explorer URL is not a link', async
     /^https:\/\/testnet\.monadexplorer\.com\//,
   );
 
+  await expect(page.getByText('#42')).toBeVisible(); // its ERC-8004 identity
   await page.goto('/agents/2');
   await expect(page.getByRole('heading', {name: 'Unproven'})).toBeVisible();
   await expect(page.locator('a[href^="javascript:"]')).toHaveCount(0);

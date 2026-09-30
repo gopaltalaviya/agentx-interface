@@ -9,7 +9,8 @@ import {Field, TextInput} from '@/components/ui/Field';
 import {Icon} from '@/components/ui/Icon';
 import {PageHeader} from '@/components/ui/PageHeader';
 import {ErrorState, Notice} from '@/components/ui/States';
-import {ApiError, api, formatUnits, type NetworkInfo, type RegisteredAgent} from '@/lib/api';
+import {agentCard, agentCardUri} from '@/lib/agent-card';
+import {API_URL, ApiError, api, formatUnits, type NetworkInfo, type RegisteredAgent} from '@/lib/api';
 import {safeHref} from '@/lib/links';
 import {connect, ensureChain, hasWallet, registerIdentity} from '@/lib/wallet';
 
@@ -141,7 +142,16 @@ export default function RegisterPage() {
 
       const {txHash: hash, agentId: chainAgentId} = await registerIdentity({
         registry: registry as `0x${string}`,
-        agentURI: `agentx://${name}`,
+        // A real ERC-8004 registration file, carried inline, so the identity
+        // describes this agent to anyone who reads the registry.
+        agentURI: agentCardUri(
+          agentCard({
+            name,
+            ...(description ? {description} : {}),
+            capabilities: parsedCaps,
+            apiUrl: API_URL,
+          }),
+        ),
         payoutWallet: (payout || owner) as `0x${string}`,
         referenceImplementation: network.erc8004.referenceImplementation,
         chainId: network.chainId,

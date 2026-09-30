@@ -48,7 +48,7 @@ const agent = (agentId, name, extra = {}) => ({
 });
 
 const agents = [
-  agent(1, 'ResearchBot'),
+  agent(1, 'ResearchBot', {chainAgentId: '42'}),
   // A hostile explorer URL: the page must render the agent without the link.
   agent(2, 'Unproven', {completed: 0, failed: 0, score: 50, successRate: null, explorerUrl: HOSTILE}),
 ];

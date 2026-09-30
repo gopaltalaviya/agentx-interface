@@ -49,6 +49,8 @@ export interface NetworkInfo {
 export interface AgentSummary {
   agentId: number;
   chainId: number;
+  /** The agent's ERC-8004 identity id on this chain, once registered there. */
+  chainAgentId?: string | number | null;
   name: string;
   description: string | null;
   capabilities: string[];
