@@ -54,7 +54,14 @@ export function RunTrace({
 }) {
   if (events.length === 0) {
     return (
-      <p role="status" className="py-8 text-center text-sm text-muted">
+      <p
+        role="status"
+        className="flex items-center justify-center gap-2 py-10 text-center text-sm text-muted"
+      >
+        <span
+          aria-hidden
+          className="size-3.5 animate-spin rounded-full border-2 border-accent border-r-transparent"
+        />
         Waiting for the first event…
       </p>
     );
@@ -62,28 +69,60 @@ export function RunTrace({
 
   return (
     <ol
-      className="divide-y divide-edge"
+      className="relative"
       aria-label="Run trace"
       {...(live ? {'aria-live': 'polite' as const, 'aria-relevant': 'additions' as const} : {})}
     >
+      {/* The rail: one line the events hang from, so the trace reads as a
+          sequence rather than a table. */}
+      <span aria-hidden className="absolute bottom-3 left-[3.53rem] top-3 w-px bg-edge sm:left-[4.28rem]" />
       {/* The trace is append-only and never reordered, so position IS a
           stable identity here; `at` alone is not unique within a millisecond. */}
       {events.map((event, i) => (
-        <li key={`${i}-${event.kind}-${event.at}`} className="flex gap-4 py-2.5 text-sm">
-          <span className="tabular w-12 shrink-0 text-right text-xs text-muted">
+        <li
+          key={`${i}-${event.kind}-${event.at}`}
+          className="trace-line relative flex gap-3 py-2 text-sm sm:gap-4"
+        >
+          <span className="tabular w-10 shrink-0 pt-0.5 text-right text-[11px] text-muted sm:w-12">
             {startedAt ? `${((event.at - startedAt) / 1000).toFixed(1)}s` : ''}
           </span>
-          <span className={`w-20 shrink-0 text-xs font-medium ${TONE[event.kind] ?? 'text-muted'}`}>
-            {event.kind}
-          </span>
-          <span className="min-w-0 flex-1">
-            <Line event={event} token={token ?? null} />
+          <span
+            aria-hidden
+            className={`relative z-10 mt-1.5 size-2.5 shrink-0 rounded-full border-2 border-surface ${DOT[event.kind] ?? 'bg-muted'} ${
+              live && i === events.length - 1 ? 'animate-pulse-ring' : ''
+            }`}
+          />
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:gap-3">
+            <span
+              className={`w-20 shrink-0 text-xs font-medium sm:pt-0.5 ${TONE[event.kind] ?? 'text-muted'}`}
+            >
+              {event.kind}
+            </span>
+            <span className="min-w-0 flex-1 break-words leading-relaxed">
+              <Line event={event} token={token ?? null} />
+            </span>
           </span>
         </li>
       ))}
     </ol>
   );
 }
+
+/** The dot on the rail carries the same meaning as the label beside it. */
+const DOT: Record<string, string> = {
+  planned: 'bg-accent text-accent',
+  'plan-failed': 'bg-broken text-broken',
+  discovered: 'bg-edge-strong text-muted',
+  selected: 'bg-text text-text',
+  hired: 'bg-chain text-chain',
+  judged: 'bg-text text-text',
+  settled: 'bg-settled text-settled',
+  disputed: 'bg-refused text-refused',
+  retrying: 'bg-refused text-refused',
+  skipped: 'bg-refused text-refused',
+  finished: 'bg-settled text-settled',
+  failed: 'bg-broken text-broken',
+};
 
 function Line({event, token}: {event: RunEvent; token: TraceToken | null}) {
   const p = event.payload;
@@ -218,7 +257,7 @@ function Explorer({url}: {url: unknown}) {
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="ml-2 text-xs text-accent underline-offset-2 hover:underline"
+      className="ml-2 inline-flex items-center gap-1 rounded-md border border-accent/25 bg-accent/5 px-1.5 py-px text-[11px] text-accent transition-colors hover:border-accent/60 hover:bg-accent/10"
     >
       explorer ↗<span className="sr-only"> (opens the block explorer in a new tab)</span>
     </a>

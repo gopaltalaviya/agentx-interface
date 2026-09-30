@@ -1,7 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import {useEffect, useState} from 'react';
+import {useEffect, useId, useRef, useState} from 'react';
+import {Badge, StatusDot, Tag} from '@/components/ui/Badge';
+import {Button} from '@/components/ui/Button';
+import {FieldAction, TextInput} from '@/components/ui/Field';
+import {Icon} from '@/components/ui/Icon';
+import {Monogram} from '@/components/ui/Monogram';
+import {PageHeader} from '@/components/ui/PageHeader';
+import {EmptyState, ErrorState, Loading, Skeleton} from '@/components/ui/States';
 import {api, type AgentSummary} from '@/lib/api';
 
 /**
@@ -30,6 +37,11 @@ export default function MarketplacePage() {
   const [input, setInput] = useState('');
   const [capability, setCapability] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [attempt, setAttempt] = useState(0);
+  const [known, setKnown] = useState<string[]>([]);
+  const search = useRef<HTMLInputElement>(null);
+  const searchId = useId();
 
   // One request per pause in typing, not per keystroke: "market-research"
   // used to be fifteen requests, and whichever came back LAST won — not
@@ -44,133 +56,277 @@ export default function MarketplacePage() {
     // response can no longer land after a fresh one.
     const controller = new AbortController();
     setError(null);
+    setLoading(true);
     api
       .agents({rank: mode, ...(capability ? {capability} : {}), limit: 50}, controller.signal)
-      .then(setAgents)
+      .then((list) => {
+        setAgents(list);
+        // Remember every capability seen, so the quick filters stay put while
+        // one of them is applied.
+        setKnown((prev) => [...new Set([...prev, ...list.flatMap((a) => a.capabilities)])].sort());
+      })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
         setError(err instanceof Error ? err.message : 'could not load agents');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [mode, capability]);
+  }, [mode, capability, attempt]);
+
+  // "/" jumps to the search, as on most marketplaces — unless typing already.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = (e.target as HTMLElement)?.closest('input, textarea, [contenteditable]');
+      if (e.key === '/' && !typing) {
+        e.preventDefault();
+        search.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const active = MODES.findIndex((m) => m.id === mode);
 
   return (
-    <div className="space-y-6">
-      <section className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Marketplace</h1>
-        <p className="max-w-2xl text-sm text-muted">
-          Every score below was written by a settled on-chain payment. No agent can report its own.
-        </p>
-      </section>
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow="Marketplace"
+        title="Marketplace"
+        description="Every score below was written by a settled on-chain payment. No agent can report its own. Choose what you value and watch the order change."
+      />
 
-      <section className="flex flex-wrap items-center gap-3">
-        <div role="group" aria-label="Rank agents by" className="flex flex-wrap gap-2">
-          {MODES.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              aria-pressed={m.id === mode}
-              onClick={() => setMode(m.id)}
-              title={m.blurb}
-              className={
-                m.id === mode
-                  ? 'rounded-full bg-accent px-3 py-1 text-xs font-medium text-ink'
-                  : 'rounded-full border border-edge px-3 py-1 text-xs text-muted hover:text-text'
-              }
-            >
-              {m.label}
-            </button>
-          ))}
+      <section aria-label="Ranking and filters" className="space-y-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          {/* A segmented control: the highlight slides to the chosen mode. */}
+          <div
+            role="group"
+            aria-label="Rank agents by"
+            className="relative grid grid-cols-4 rounded-xl border border-edge bg-surface/80 p-1 backdrop-blur-sm"
+          >
+            <span
+              aria-hidden
+              className="absolute inset-y-1 left-1 w-[calc((100%-0.5rem)/4)] rounded-lg bg-accent shadow-[0_6px_20px_-8px_rgb(110_168_255/0.8)] transition-transform duration-300 ease-[var(--ease-out-soft)]"
+              style={{transform: `translateX(${active * 100}%)`}}
+            />
+            {MODES.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                aria-pressed={m.id === mode}
+                onClick={() => setMode(m.id)}
+                title={m.blurb}
+                className={
+                  'relative z-10 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors duration-200 sm:px-4 ' +
+                  (m.id === mode ? 'text-ink' : 'text-muted hover:text-text')
+                }
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+
+          <label htmlFor={searchId} className="sr-only">
+            Filter by capability
+          </label>
+          <TextInput
+            ref={search}
+            id={searchId}
+            type="search"
+            icon="search"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setInput('');
+            }}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="capability, e.g. market-research"
+            className="lg:ml-auto lg:w-80"
+            actions={
+              input ? (
+                <FieldAction icon="x" label="Clear the filter" onClick={() => setInput('')} />
+              ) : (
+                <kbd className="mr-1.5 hidden rounded border border-edge px-1.5 text-[10px] text-muted sm:inline">
+                  /
+                </kbd>
+              )
+            }
+          />
         </div>
 
-        <label htmlFor="capability-filter" className="sr-only">
-          Filter by capability
-        </label>
-        <input
-          id="capability-filter"
-          type="search"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          autoComplete="off"
-          spellCheck={false}
-          placeholder="capability, e.g. market-research"
-          className="ml-auto w-64 rounded-md border border-edge bg-surface px-3 py-1.5 text-sm outline-none focus:border-accent"
-        />
+        {known.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted">Capabilities:</span>
+            {known.map((c) => (
+              <button
+                key={c}
+                type="button"
+                aria-pressed={capability === c}
+                onClick={() => setInput(capability === c ? '' : c)}
+                className={
+                  'tabular rounded-full border px-2.5 py-1 text-[11px] transition-colors duration-200 ' +
+                  (capability === c
+                    ? 'border-accent/60 bg-accent/10 text-text'
+                    : 'border-edge text-muted hover:border-edge-strong hover:text-text')
+                }
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <p aria-live="polite" className="flex flex-wrap items-center gap-x-2 text-xs text-muted">
+          <span className="text-text">{MODES[active]?.label}:</span> {MODES[active]?.blurb}
+          {agents && (
+            <span>
+              · {agents.length} agent{agents.length === 1 ? '' : 's'}
+              {capability ? ` offering “${capability}”` : ''}
+            </span>
+          )}
+        </p>
       </section>
 
-      <p aria-live="polite" className="text-xs text-muted">
-        {MODES.find((m) => m.id === mode)?.blurb}
-      </p>
-
       {error && (
-        <p
-          role="alert"
-          className="rounded-md border border-broken/40 bg-broken/10 px-3 py-2 text-sm text-broken"
+        <ErrorState
+          title="Could not load the marketplace"
+          action={
+            <Button variant="secondary" size="sm" onClick={() => setAttempt((n) => n + 1)}>
+              <Icon name="refresh" className="size-3.5" /> Retry
+            </Button>
+          }
         >
           {error}
-        </p>
+        </ErrorState>
       )}
 
       {agents === null && !error && (
-        <p role="status" className="py-8 text-sm text-muted">
-          Loading…
-        </p>
+        <Loading label="Loading agents">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="space-y-3 rounded-xl border border-edge bg-surface/60 p-5">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="size-10 rounded-lg" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-2/3" />
+                    <Skeleton className="h-3 w-1/3" />
+                  </div>
+                </div>
+                <Skeleton className="h-1.5 w-full" />
+                <Skeleton className="h-3 w-1/2" />
+              </div>
+            ))}
+          </div>
+        </Loading>
       )}
 
       {agents?.length === 0 && (
-        <p className="py-8 text-sm text-muted">No agent matches{capability ? ` “${capability}”` : ''} yet.</p>
+        <EmptyState
+          icon="search"
+          title={`No agent matches${capability ? ` “${capability}”` : ''} yet.`}
+          action={
+            capability ? (
+              <Button variant="secondary" size="sm" onClick={() => setInput('')}>
+                Clear the filter
+              </Button>
+            ) : (
+              <Link href="/register" className="text-sm text-accent hover:underline">
+                Register the first one
+              </Link>
+            )
+          }
+        >
+          An agent appears here once it has an ERC-8004 identity and an AGENTX record.
+        </EmptyState>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {agents?.map((agent) => (
-          <AgentCard key={agent.agentId} agent={agent} />
-        ))}
-      </div>
+      {agents && agents.length > 0 && (
+        // The previous order stays on screen, dimmed, while the new one loads —
+        // a re-rank is a change to watch, not a page to wait for.
+        <ul
+          key={agents.map((a) => a.agentId).join(',')}
+          aria-busy={loading || undefined}
+          className={`stagger grid gap-4 transition-opacity duration-200 sm:grid-cols-2 lg:grid-cols-3 ${loading ? 'opacity-50' : ''}`}
+        >
+          {agents.map((agent, i) => (
+            <li key={agent.agentId} style={{'--i': i} as React.CSSProperties}>
+              <AgentCard agent={agent} rank={i + 1} />
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
 
-function AgentCard({agent}: {agent: AgentSummary}) {
+function AgentCard({agent, rank}: {agent: AgentSummary; rank: number}) {
   const proven = agent.completed + agent.failed > 0;
 
   return (
     <Link
       href={`/agents/${agent.agentId}`}
-      className="block rounded-lg border border-edge bg-surface p-4 transition-colors hover:border-accent"
+      className="card-interactive group flex h-full flex-col gap-4 rounded-xl border border-edge bg-surface/80 p-5 backdrop-blur-sm"
     >
-      <div className="flex items-start justify-between gap-2">
-        <span className="font-medium">{agent.name}</span>
-        <span className="tabular text-sm">{agent.priceDisplay}</span>
+      <div className="flex items-start gap-3">
+        <Monogram name={agent.name} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <span className="truncate font-medium">{agent.name}</span>
+            <span className="tabular shrink-0 text-sm">{agent.priceDisplay}</span>
+          </div>
+          <div className="mt-1 flex items-center gap-2 text-[11px] text-muted">
+            <span className="tabular">#{rank}</span>
+            <span aria-hidden>·</span>
+            <span className="inline-flex items-center gap-1">
+              <StatusDot tone={agent.active ? 'settled' : 'refused'} />
+              {agent.active ? 'accepting work' : 'not accepting work'}
+            </span>
+          </div>
+        </div>
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-1">
+      <div className="flex flex-wrap gap-1">
         {agent.capabilities.map((c) => (
-          <span key={c} className="rounded border border-edge px-1.5 py-0.5 text-xs text-muted">
-            {c}
-          </span>
+          <Tag key={c}>{c}</Tag>
         ))}
       </div>
 
-      <div className="mt-3 flex items-center gap-4 text-xs">
+      <div className="mt-auto space-y-2 text-xs">
         {/* An unproven agent is labelled, not scored. Rendering 50 as a grade
             would teach a viewer that it means "mediocre" when it means
             "nothing has settled yet". */}
         {proven ? (
           <>
-            <span className="tabular">
-              score <strong className="text-text">{agent.score}</strong>
-            </span>
-            <span className="text-muted">
-              {agent.completed} settled · {agent.failed} failed
+            <div className="flex items-center justify-between">
+              <span className="tabular">
+                score <strong className="text-text">{agent.score}</strong>
+              </span>
+              <span className="text-muted">
+                {agent.completed} settled · {agent.failed} failed
+              </span>
+            </div>
+            <span aria-hidden className="block h-1.5 overflow-hidden rounded-full bg-edge">
+              <span
+                className="block h-full rounded-full bg-gradient-to-r from-accent to-settled"
+                style={{width: `${Math.max(4, Math.min(100, agent.score))}%`}}
+              />
             </span>
           </>
         ) : (
-          <span className="rounded border border-edge px-1.5 py-0.5 text-muted">
-            unproven — no settled jobs yet
-          </span>
+          <Badge>unproven — no settled jobs yet</Badge>
         )}
-        {!agent.active && <span className="ml-auto text-refused">not accepting work</span>}
       </div>
+
+      <span className="flex items-center gap-1 text-xs text-muted transition-colors group-hover:text-accent">
+        View profile
+        <Icon
+          name="arrowRight"
+          className="size-3 transition-transform duration-200 group-hover:translate-x-0.5"
+        />
+      </span>
     </Link>
   );
 }

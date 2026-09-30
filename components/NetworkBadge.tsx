@@ -2,6 +2,7 @@
 
 import {useEffect, useState} from 'react';
 import {api, type NetworkInfo} from '@/lib/api';
+import {StatusDot} from './ui/Badge';
 
 /**
  * Which chain, and whether the funds are real.
@@ -23,29 +24,40 @@ export function NetworkBadge() {
       .catch(() => setUnreachable(true));
   }, []);
 
+  const base = 'inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs whitespace-nowrap';
+
   if (unreachable) {
     return (
-      <span className="rounded-full border border-broken/40 px-3 py-1 text-xs text-broken">
+      <span className={`${base} border-broken/40 bg-broken/10 text-broken`}>
+        <StatusDot tone="broken" />
         API unreachable
       </span>
     );
   }
 
   if (!network) {
-    return <span className="rounded-full border border-edge px-3 py-1 text-xs text-muted">…</span>;
+    return (
+      <span className={`${base} border-edge text-muted`}>
+        <span className="skeleton h-2 w-20" aria-hidden />
+        <span className="sr-only">Checking the network</span>
+      </span>
+    );
   }
 
   return (
     <span
       className={
         network.testnet
-          ? 'rounded-full border border-edge px-3 py-1 text-xs text-muted'
-          : 'rounded-full border border-refused/50 bg-refused/10 px-3 py-1 text-xs font-medium text-refused'
+          ? `${base} border-chain/30 bg-chain/10 text-muted`
+          : `${base} border-refused/50 bg-refused/10 font-medium text-refused`
       }
       title={network.contracts['TaskEscrow'] ?? undefined}
     >
-      {network.name}
-      {network.testnet ? ' · testnet' : ' · REAL FUNDS'}
+      <StatusDot tone={network.testnet ? 'chain' : 'refused'} />
+      <span className={network.testnet ? 'text-text' : ''}>
+        {network.name}
+        {network.testnet ? ' · testnet' : ' · REAL FUNDS'}
+      </span>
     </span>
   );
 }

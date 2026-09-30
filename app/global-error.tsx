@@ -16,7 +16,7 @@ export default function GlobalError({reset}: {error: Error & {digest?: string}; 
           <button
             type="button"
             onClick={reset}
-            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-ink"
+            className="h-10 rounded-lg bg-accent px-4 text-sm font-medium text-ink transition-transform active:scale-[0.97]"
           >
             Try again
           </button>

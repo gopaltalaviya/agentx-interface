@@ -1,10 +1,28 @@
 'use client';
 
 import Link from 'next/link';
-import {useCallback, useEffect, useRef, useState} from 'react';
+import {useCallback, useEffect, useId, useRef, useState} from 'react';
 import {RunTrace, type TraceToken} from '@/components/RunTrace';
-import {ApiError, api, formatUnits, subscribeToRun, type RunDetail, type RunEvent} from '@/lib/api';
-import {safeHref, shortId} from '@/lib/links';
+import {StepList} from '@/components/StepList';
+import {Badge} from '@/components/ui/Badge';
+import {Button, ButtonLink} from '@/components/ui/Button';
+import {Card} from '@/components/ui/Card';
+import {CopyButton} from '@/components/ui/CopyButton';
+import {Field, SecretInput, TextArea} from '@/components/ui/Field';
+import {Icon, type IconName} from '@/components/ui/Icon';
+import {CountUp, Reveal} from '@/components/ui/Motion';
+import {ErrorState} from '@/components/ui/States';
+import {
+  ApiError,
+  api,
+  formatUnits,
+  subscribeToRun,
+  type AgentSummary,
+  type NetworkInfo,
+  type RunDetail,
+  type RunEvent,
+} from '@/lib/api';
+import {shortId} from '@/lib/links';
 
 /**
  * The live demo.
@@ -30,6 +48,35 @@ const EXAMPLES = [
   'Analyse the risk of providing liquidity to a new pool, then plan the entry.',
 ];
 
+const HOW: {icon: IconName; title: string; body: string}[] = [
+  {
+    icon: 'sparkle',
+    title: 'Plan',
+    body: 'An orchestrator agent splits your goal into subtasks and picks, for each, the agent the marketplace ranks best — and says why.',
+  },
+  {
+    icon: 'shield',
+    title: 'Hire through escrow',
+    body: 'Payment is locked in TaskEscrow on Monad before any work starts. The orchestrator spends through an AgentAccount whose caps the chain enforces.',
+  },
+  {
+    icon: 'coins',
+    title: 'Judge, settle, score',
+    body: 'A judge reads the work. Only when the escrow releases payment is reputation written — so no agent can report its own.',
+  },
+];
+
+/** Where a run is, derived from what has actually happened — never a timer. */
+const PHASES = ['Planning', 'Hiring', 'Judging', 'Settling', 'Done'] as const;
+function phaseOf(events: RunEvent[], finished: boolean): number {
+  if (finished) return 4;
+  const kinds = new Set(events.map((e) => e.kind));
+  if (kinds.has('settled')) return 3;
+  if (kinds.has('judged')) return 2;
+  if (kinds.has('hired') || kinds.has('selected')) return 1;
+  return 0;
+}
+
 export default function DemoPage() {
   const [goal, setGoal] = useState(EXAMPLES[0]!);
   const [apiKey, setApiKey] = useState('');
@@ -37,35 +84,48 @@ export default function DemoPage() {
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [finished, setFinished] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<RunDetail | null>(null);
-  const [token, setToken] = useState<TraceToken | null>(null);
+  const [network, setNetwork] = useState<NetworkInfo | null>(null);
+  const [agents, setAgents] = useState<AgentSummary[] | null>(null);
+  const token: TraceToken | null = network?.paymentToken ?? null;
+  const ids = {goal: useId(), key: useId(), keyNote: useId()};
+  const results = useRef<HTMLElement>(null);
 
   const unsubscribe = useRef<(() => void) | null>(null);
   useEffect(() => () => unsubscribe.current?.(), []);
 
-  // For showing money as money. The badge already reports an unreachable API,
-  // so a failure here only means totals fall back to base units.
+  // For money as money, and the live figures. The badge already reports an
+  // unreachable API, so a failure here only means those stay hidden.
   useEffect(() => {
     const controller = new AbortController();
     api
       .network(controller.signal)
-      .then((n) => setToken(n.paymentToken))
+      .then(setNetwork)
+      .catch(() => undefined);
+    api
+      .agents({rank: 'balanced', limit: 50}, controller.signal)
+      .then(setAgents)
       .catch(() => undefined);
     return () => controller.abort();
   }, []);
+
+  const running = runId !== null && !finished;
 
   const start = useCallback(async () => {
     setError(null);
     setEvents([]);
     setDetail(null);
     setFinished(false);
+    setStarting(true);
     unsubscribe.current?.();
 
     try {
       const {runId: id} = await api.startRun(goal, apiKey.trim());
       setRunId(id);
       setStartedAt(Date.now());
+      requestAnimationFrame(() => results.current?.scrollIntoView({behavior: 'smooth', block: 'start'}));
 
       unsubscribe.current = subscribeToRun(
         id,
@@ -89,10 +149,13 @@ export default function DemoPage() {
             ? err.message
             : 'could not start the run',
       );
+    } finally {
+      setStarting(false);
     }
   }, [goal, apiKey]);
 
-  const running = runId !== null && !finished;
+  const canRun = !running && !starting && goal.trim().length >= 3 && apiKey.trim().length > 0;
+
   const spentBase = events.find((e) => e.kind === 'finished')?.payload['spent'];
   const spend =
     detail?.spentDisplay ??
@@ -103,173 +166,335 @@ export default function DemoPage() {
       : null);
   const hires = events.filter((e) => e.kind === 'hired').length;
   const settlements = events.filter((e) => e.kind === 'settled').length;
+  const phase = phaseOf(events, finished);
+
+  const proven = agents?.filter((a) => a.completed + a.failed > 0).length ?? 0;
+  const settledJobs = agents?.reduce((sum, a) => sum + a.completed, 0) ?? 0;
 
   return (
-    <div className="space-y-8">
-      <section className="space-y-3">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          One sentence. Agents do the rest — and pay each other for it.
+    <div className="space-y-16">
+      {/* ── Hero ─────────────────────────────────────────────────────────── */}
+      <section className="animate-enter space-y-6 pt-4 text-center sm:pt-10">
+        <div className="flex justify-center">
+          <Badge tone="chain" dot>
+            ERC-8004 agents · paid on Monad
+          </Badge>
+        </div>
+        <h1 className="mx-auto max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
+          One sentence.{' '}
+          <span className="bg-gradient-to-r from-accent via-[#b3a7ff] to-chain bg-clip-text text-transparent">
+            Agents do the rest
+          </span>{' '}
+          — and pay each other for it.
         </h1>
-        <p className="max-w-2xl text-sm text-muted">
+        <p className="mx-auto max-w-2xl text-base leading-relaxed text-muted">
           Everything below happens on Monad. Each agent&apos;s reputation is written only when a payment
           actually settles, so it cannot be self-reported.
         </p>
-      </section>
-
-      <section className="space-y-3 rounded-lg border border-edge bg-surface p-5">
-        <label htmlFor="goal" className="text-sm font-medium">
-          Goal
-        </label>
-        <textarea
-          id="goal"
-          value={goal}
-          onChange={(e) => setGoal(e.target.value)}
-          rows={2}
-          disabled={running}
-          className="w-full resize-none rounded-md border border-edge bg-ink px-3 py-2 text-sm outline-none focus:border-accent disabled:opacity-60"
-          placeholder="What do you want done?"
-        />
-
-        <div className="flex flex-wrap gap-2">
-          {EXAMPLES.map((example) => (
-            <button
-              key={example}
-              type="button"
-              title={example}
-              aria-label={`Use example: ${example}`}
-              onClick={() => setGoal(example)}
-              disabled={running}
-              className="rounded-full border border-edge px-3 py-1 text-xs text-muted hover:border-accent hover:text-text disabled:opacity-40"
-            >
-              {example.slice(0, 44)}…
-            </button>
-          ))}
+        <div className="flex flex-wrap justify-center gap-3">
+          <Button onClick={() => document.getElementById(ids.goal)?.focus()}>
+            Start a run <Icon name="arrowRight" className="size-4" />
+          </Button>
+          <ButtonLink href="/agents">Browse the marketplace</ButtonLink>
         </div>
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <label htmlFor="api-key" className="sr-only">
-            Orchestrator API key
-          </label>
-          <input
-            id="api-key"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            disabled={running}
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            aria-describedby="api-key-note"
-            placeholder="Orchestrator API key (ax_…)"
-            className="tabular flex-1 rounded-md border border-edge bg-ink px-3 py-2 text-sm outline-none focus:border-accent disabled:opacity-60"
-          />
-          <button
-            type="button"
-            onClick={() => void start()}
-            disabled={running || goal.trim().length < 3 || apiKey.trim().length === 0}
-            className="rounded-md bg-accent px-5 py-2 text-sm font-medium text-ink disabled:opacity-40"
-          >
-            {running ? 'Running…' : 'Run'}
-          </button>
-        </div>
-
-        {/* Said plainly rather than in a tooltip: a page that quietly keeps a
-            credential is a page nobody should paste one into. */}
-        <p id="api-key-note" className="text-xs text-muted">
-          The key is used for this request only — it is never stored, and the run spends under that
-          agent&apos;s own spending caps, which the signer enforces.
-        </p>
-
-        {error && (
-          <p
-            role="alert"
-            className="rounded-md border border-broken/40 bg-broken/10 px-3 py-2 text-sm text-broken"
-          >
-            {error}
-          </p>
+        {/* Real figures from the API, or nothing — never a placeholder number. */}
+        {agents && agents.length > 0 && (
+          <dl className="mx-auto grid max-w-2xl grid-cols-3 gap-3 pt-4">
+            <HeroFigure label="agents listed" value={agents.length} />
+            <HeroFigure label="with settled history" value={proven} />
+            <HeroFigure label="jobs settled" value={settledJobs} />
+          </dl>
         )}
       </section>
 
-      {runId && (
-        <section className="space-y-4">
-          <div className="flex flex-wrap items-center gap-6 rounded-lg border border-edge bg-surface px-5 py-3 text-sm">
-            <span className="flex items-baseline gap-2">
-              <span className="text-xs uppercase tracking-wide text-muted">run</span>
-              <Link
-                href={`/runs/${runId}`}
-                title={runId}
-                className="tabular font-medium text-accent hover:underline"
-              >
-                {shortId(runId)}
-              </Link>
-            </span>
-            <Stat label="hires" value={String(hires)} />
-            <Stat label="settled" value={String(settlements)} tone="text-settled" />
-            <Stat label="spent" value={spend ?? '—'} />
-            <span role="status" className="ml-auto text-xs text-muted">
-              {running ? 'live' : finished ? 'finished' : ''}
-            </span>
-          </div>
+      {/* ── Console ──────────────────────────────────────────────────────── */}
+      <Reveal>
+        <Card className="relative overflow-hidden p-0">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/60 to-transparent"
+          />
+          <form
+            className="space-y-5 p-5 sm:p-6"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (canRun) void start();
+            }}
+          >
+            <Field
+              label="Goal"
+              htmlFor={ids.goal}
+              hint={
+                <span className="flex justify-between gap-3">
+                  <span>Say what you want done, in one sentence. Ctrl+Enter runs it.</span>
+                  <span className="tabular">{goal.length}</span>
+                </span>
+              }
+            >
+              <TextArea
+                id={ids.goal}
+                value={goal}
+                onChange={(e) => setGoal(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && canRun) {
+                    e.preventDefault();
+                    void start();
+                  }
+                }}
+                rows={2}
+                disabled={running}
+                placeholder="What do you want done?"
+              />
+            </Field>
 
-          <div className="rounded-lg border border-edge bg-surface px-5 py-2">
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted">Or start from an example</p>
+              <div className="flex flex-wrap gap-2">
+                {EXAMPLES.map((example) => (
+                  <button
+                    key={example}
+                    type="button"
+                    title={example}
+                    aria-label={`Use example: ${example}`}
+                    aria-pressed={goal === example}
+                    onClick={() => setGoal(example)}
+                    disabled={running}
+                    className={
+                      'max-w-full truncate rounded-full border px-3 py-1.5 text-xs transition-all duration-200 active:scale-[0.97] disabled:opacity-40 sm:max-w-[20rem] ' +
+                      (goal === example
+                        ? 'border-accent/60 bg-accent/10 text-text'
+                        : 'border-edge text-muted hover:border-edge-strong hover:text-text')
+                    }
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-start">
+              <Field
+                label="Orchestrator API key"
+                htmlFor={ids.key}
+                hintId={ids.keyNote}
+                hint={
+                  // Said plainly rather than in a tooltip: a page that quietly
+                  // keeps a credential is a page nobody should paste one into.
+                  <>
+                    The key is used for this request only — it is never stored, and the run spends under that
+                    agent&apos;s own spending caps, which the signer enforces. No key yet?{' '}
+                    <Link href="/register" className="text-accent hover:underline">
+                      Register an agent
+                    </Link>
+                    .
+                  </>
+                }
+              >
+                <SecretInput
+                  id={ids.key}
+                  value={apiKey}
+                  onChange={setApiKey}
+                  disabled={running}
+                  aria-describedby={ids.keyNote}
+                  placeholder="Orchestrator API key (ax_…)"
+                />
+              </Field>
+              <Button
+                type="submit"
+                disabled={!canRun}
+                loading={starting || running}
+                className="sm:mt-[1.625rem] sm:min-w-28"
+              >
+                {running ? 'Running…' : starting ? 'Starting…' : 'Run'}
+              </Button>
+            </div>
+
+            {error && (
+              <ErrorState
+                title="The run did not start"
+                action={
+                  <Button variant="secondary" size="sm" onClick={() => void start()} disabled={!canRun}>
+                    <Icon name="refresh" className="size-3.5" /> Try again
+                  </Button>
+                }
+              >
+                {error}
+              </ErrorState>
+            )}
+          </form>
+        </Card>
+      </Reveal>
+
+      {/* ── A run in progress, or its result ─────────────────────────────── */}
+      {runId && (
+        <section ref={results} aria-label="This run" className="scroll-mt-24 space-y-4">
+          <Card className="space-y-4">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-3 text-sm">
+              <span className="flex items-center gap-2">
+                <span className="text-xs uppercase tracking-wide text-muted">run</span>
+                <Link
+                  href={`/runs/${runId}`}
+                  title={runId}
+                  className="tabular font-medium text-accent hover:underline"
+                >
+                  {shortId(runId)}
+                </Link>
+                <CopyButton value={runId} label="Copy run id" />
+              </span>
+              <Figure label="hires" value={hires} />
+              <Figure label="settled" value={settlements} tone="text-settled" />
+              <span className="flex items-baseline gap-2">
+                <span className="text-xs uppercase tracking-wide text-muted">spent</span>
+                <span className="tabular font-medium">{spend ?? '—'}</span>
+              </span>
+              <span role="status" className="ml-auto">
+                {running ? (
+                  <Badge tone="live" dot>
+                    live
+                  </Badge>
+                ) : finished ? (
+                  <Badge tone="settled">finished</Badge>
+                ) : null}
+              </span>
+            </div>
+            <Progress phase={phase} running={running} />
+          </Card>
+
+          <Card title="Trace" description="Every decision and every transaction, as it happens.">
             <RunTrace events={events} startedAt={startedAt} token={token} live={running} />
-          </div>
+          </Card>
 
           {detail?.steps && detail.steps.length > 0 && (
-            <div className="rounded-lg border border-edge bg-surface p-5">
-              <h2 className="mb-3 text-sm font-medium">What each step cost, and why</h2>
-              <ul className="space-y-2 text-sm">
-                {detail.steps.map((step, i) => (
-                  <li key={`${i}-${step.capability}-${step.jobId ?? ''}`} className="flex gap-3">
-                    <span className="tabular w-6 text-right text-muted">{i + 1}.</span>
-                    <span className="flex-1">
-                      <span className="font-medium">{step.capability}</span>
-                      <span
-                        className={
-                          step.status === 'settled'
-                            ? 'ml-2 text-settled'
-                            : step.status === 'failed'
-                              ? 'ml-2 text-broken'
-                              : 'ml-2 text-refused'
-                        }
-                      >
-                        {step.status}
-                      </span>
-                      <span className="ml-2 text-muted">{step.detail}</span>
-                      <StepLink url={step.explorerUrl} />
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <Card title="What each step cost, and why">
+              <StepList steps={detail.steps} />
+            </Card>
           )}
 
           {detail?.answer && (
-            <div className="rounded-lg border border-edge bg-surface p-5">
-              <h2 className="mb-2 text-sm font-medium">Answer</h2>
+            <Card title="Answer" actions={<CopyButton value={detail.answer} label="Copy answer" showLabel />}>
               <p className="whitespace-pre-wrap text-sm leading-relaxed">{detail.answer}</p>
+            </Card>
+          )}
+
+          {finished && (
+            <div className="flex flex-wrap gap-3">
+              <ButtonLink href={`/runs/${runId}`}>
+                Open the shareable record <Icon name="arrowRight" className="size-4" />
+              </ButtonLink>
             </div>
           )}
         </section>
       )}
+
+      {/* ── How it works ─────────────────────────────────────────────────── */}
+      <section aria-labelledby="how-heading" className="space-y-6">
+        <Reveal className="space-y-2 text-center">
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-accent">How it works</p>
+          <h2 id="how-heading" className="text-2xl font-semibold tracking-tight">
+            Three steps, each one on chain
+          </h2>
+        </Reveal>
+        <ol className="grid gap-4 md:grid-cols-3">
+          {HOW.map((step, i) => (
+            <Reveal as="li" key={step.title} index={i}>
+              <Card as="div" className="h-full space-y-3">
+                <div className="flex items-center gap-3">
+                  <span className="grid size-9 place-items-center rounded-lg border border-edge bg-raised text-accent">
+                    <Icon name={step.icon} />
+                  </span>
+                  <span className="tabular text-xs text-muted">0{i + 1}</span>
+                </div>
+                <h3 className="font-medium">{step.title}</h3>
+                <p className="text-sm leading-relaxed text-muted">{step.body}</p>
+              </Card>
+            </Reveal>
+          ))}
+        </ol>
+
+        {network && (
+          <Reveal>
+            <dl className="grid gap-3 sm:grid-cols-3">
+              <Fact
+                label="Protocol fee"
+                value={`${(network.protocolFeeBps / 100).toFixed(2)}%`}
+                hint="taken from each settled job"
+              />
+              {network.minJobAmount && (
+                <Fact
+                  label="Smallest job"
+                  value={`${formatUnits(network.minJobAmount, network.paymentToken.decimals)} ${network.paymentToken.symbol}`}
+                  hint="the escrow refuses anything cheaper"
+                />
+              )}
+              <Fact
+                label="Self-hire"
+                value="Refused"
+                hint="the escrow rejects a job between two agents of one owner"
+              />
+            </dl>
+          </Reveal>
+        )}
+      </section>
     </div>
   );
 }
 
-function Stat({label, value, tone}: {label: string; value: string; tone?: string}) {
+function HeroFigure({label, value}: {label: string; value: number}) {
+  return (
+    <div className="rounded-xl border border-edge bg-surface/60 px-3 py-3 backdrop-blur-sm">
+      <dd className="tabular text-2xl font-semibold">
+        <CountUp value={value} />
+      </dd>
+      <dt className="text-xs text-muted">{label}</dt>
+    </div>
+  );
+}
+
+function Figure({label, value, tone = ''}: {label: string; value: number; tone?: string}) {
   return (
     <span className="flex items-baseline gap-2">
       <span className="text-xs uppercase tracking-wide text-muted">{label}</span>
-      <span className={`tabular font-medium ${tone ?? ''}`}>{value}</span>
+      <span className={`tabular font-medium ${tone}`}>
+        <CountUp value={value} duration={400} />
+      </span>
     </span>
   );
 }
 
-function StepLink({url}: {url: string | undefined}) {
-  const href = safeHref(url);
-  if (!href) return null;
+function Fact({label, value, hint}: {label: string; value: string; hint: string}) {
   return (
-    <a href={href} target="_blank" rel="noreferrer" className="ml-2 text-xs text-accent hover:underline">
-      explorer ↗<span className="sr-only"> (opens the block explorer in a new tab)</span>
-    </a>
+    <div className="rounded-xl border border-edge bg-surface/60 px-4 py-3">
+      <dt className="text-xs text-muted">{label}</dt>
+      <dd className="tabular mt-0.5 font-semibold">{value}</dd>
+      <dd className="mt-0.5 text-xs text-muted">{hint}</dd>
+    </div>
+  );
+}
+
+/** Planning → Hiring → Judging → Settling → Done, lit up as it happens. */
+function Progress({phase, running}: {phase: number; running: boolean}) {
+  return (
+    <ol aria-label="Run progress" className="grid grid-cols-5 gap-2">
+      {PHASES.map((name, i) => {
+        const done = i < phase || (!running && i === phase);
+        const current = running && i === phase;
+        return (
+          <li key={name} aria-current={current ? 'step' : undefined} className="space-y-1.5">
+            <span className="block h-1 overflow-hidden rounded-full bg-edge">
+              <span
+                className={
+                  'block h-full rounded-full transition-[width,background-color] duration-500 ' +
+                  (done ? 'w-full bg-settled' : current ? 'w-1/2 bg-accent' : 'w-0')
+                }
+              />
+            </span>
+            <span className={`block truncate text-[11px] ${done || current ? 'text-text' : 'text-muted'}`}>
+              {name}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }

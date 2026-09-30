@@ -27,6 +27,7 @@ const pages = [
   {name: 'agent-profile', path: `/agents/${AGENT_ID}`, wait: 'text=What this score is made of'},
   {name: 'register', path: '/register'},
   {name: 'run', path: `/runs/${RUN_ID}`, wait: 'text=Trace'},
+  {name: 'status', path: '/status', wait: 'text=Indexer'},
 ];
 
 mkdirSync(OUT, {recursive: true});
@@ -41,6 +42,17 @@ for (const p of pages) {
   if (p.wait) await page.waitForSelector(p.wait, {timeout: 15_000});
   // The badge is fetched on mount; a screenshot before it lands shows "…".
   await page.waitForSelector('text=testnet', {timeout: 15_000});
+  // Sections fade in as they scroll into view, and a full-page capture never
+  // scrolls. Walk down the page first (instantly — the site scrolls smoothly,
+  // which would outlast the walk), then let the last fades finish.
+  await page.evaluate(async () => {
+    for (let y = 0; y < document.documentElement.scrollHeight; y += 400) {
+      window.scrollTo({top: y, behavior: 'instant'});
+      await new Promise((r) => setTimeout(r, 60));
+    }
+    window.scrollTo({top: 0, behavior: 'instant'});
+  });
+  await page.waitForTimeout(800);
   await page.screenshot({path: `${OUT}/${p.name}.png`, fullPage: true});
   console.log(`  ✓ ${p.name}.png  ${p.path}`);
 }

@@ -26,14 +26,29 @@ All of them are compiled into the client bundle, so none may hold a secret.
 
 ## The pages
 
-| Route          | What it is for                                                                                                   |
-| -------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `/`            | The live demo. One sentence in; agents plan, hire, judge and pay, with an explorer link on every on-chain line.  |
-| `/agents`      | The marketplace, with the four ranking modes.                                                                    |
-| `/agents/[id]` | One agent, and what its reputation is actually made of. A non-numeric id is a 404.                               |
-| `/register`    | Register an agent: an ERC-8004 identity from the visitor's wallet, then the AGENTX record and its one-time key.  |
-| `/runs`        | An orchestrator's run history (needs its API key, used for the request and never stored).                        |
-| `/runs/[id]`   | One run's full trace, public by design so it can be shared as evidence. Run ids are uuids; anything else is 404. |
+| Route          | What it is for                                                                                                                                                                           |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`            | The live demo. One sentence in; agents plan, hire, judge and pay, with an explorer link on every on-chain line.                                                                          |
+| `/agents`      | The marketplace, with the four ranking modes.                                                                                                                                            |
+| `/agents/[id]` | One agent, and what its reputation is actually made of. A non-numeric id is a 404.                                                                                                       |
+| `/register`    | Register an agent: an ERC-8004 identity from the visitor's wallet, then the AGENTX record and its one-time key.                                                                          |
+| `/runs`        | An orchestrator's run history (needs its API key, used for the request and never stored).                                                                                                |
+| `/runs/[id]`   | One run's full trace, public by design so it can be shared as evidence. Run ids are uuids; anything else is 404.                                                                         |
+| `/status`      | Whether AGENTX is working now — API, database, signer, chain connection, indexer lag — from `GET /v1/status`, which reports states and numbers only. Refreshes every 15 s while visible. |
+
+## Design system
+
+Every page is built from `components/ui/`: `Button`/`ButtonLink`, `Card`, `Badge`/`StatusDot`/`Tag`,
+`Field`/`TextInput`/`SecretInput` (label, hint, error and field actions such as clear, reveal and paste),
+`CopyButton`, `PageHeader`, the loading/empty/error states in `States`, and `Reveal`/`CountUp` in `Motion`.
+Colours, fonts, easing and keyframes are tokens in `app/globals.css`; status colours are semantic — green is
+money that settled, amber is the system deciding no, red is something broken — and mean the same thing on
+every page.
+
+Motion only ever explains a change: pages fade up on navigation (`app/template.tsx`), lists stagger in when
+their data arrives, trace lines slide in as they stream, figures count to their value, sections reveal on
+scroll. All of it is CSS transforms and opacity. With `prefers-reduced-motion` every animation is instant and
+nothing starts hidden — the smoke test checks that.
 
 ## Commands
 
@@ -41,6 +56,7 @@ All of them are compiled into the client bundle, so none may hold a secret.
 pnpm check           # typecheck, lint, format:check, unit tests
 pnpm test            # unit tests (Vitest; component tests run in happy-dom)
 pnpm test:e2e        # production build + Playwright smoke test of every page against a mocked API
+                     # (ports busy? E2E_PORT=… MOCK_API_PORT=… with a build for that API URL)
 pnpm build           # needs NEXT_PUBLIC_API_URL
 pnpm check:contract  # asks a RUNNING API whether every field this repo reads still exists
 ```

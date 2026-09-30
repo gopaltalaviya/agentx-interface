@@ -1,7 +1,8 @@
 'use client';
 
-import Link from 'next/link';
 import {useEffect} from 'react';
+import {Button, ButtonLink} from '@/components/ui/Button';
+import {Icon} from '@/components/ui/Icon';
 
 /**
  * A page that threw.
@@ -17,9 +18,12 @@ export default function PageError({error, reset}: {error: Error & {digest?: stri
   }, [error]);
 
   return (
-    <div role="alert" className="space-y-4 py-8">
-      <h1 className="text-xl font-semibold">This page failed to load</h1>
-      <p className="max-w-2xl text-sm text-muted">
+    <div role="alert" className="mx-auto flex max-w-lg flex-col items-center gap-5 py-16 text-center">
+      <span className="grid size-12 place-items-center rounded-full border border-broken/40 bg-broken/10 text-broken">
+        <Icon name="alert" className="size-6" />
+      </span>
+      <h1 className="text-2xl font-semibold tracking-tight">This page failed to load</h1>
+      <p className="text-sm leading-relaxed text-muted">
         Nothing was spent and nothing was signed — this page only reads. The usual cause is the API being
         unreachable for a moment.
         {error.digest ? (
@@ -29,17 +33,14 @@ export default function PageError({error, reset}: {error: Error & {digest?: stri
           </>
         ) : null}
       </p>
-      <div className="flex gap-3">
-        <button
-          type="button"
-          onClick={reset}
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-ink"
-        >
-          Try again
-        </button>
-        <Link href="/" className="rounded-md border border-edge px-4 py-2 text-sm hover:border-accent">
-          Back to the demo
-        </Link>
+      <div className="flex flex-wrap justify-center gap-3">
+        <Button onClick={reset}>
+          <Icon name="refresh" /> Try again
+        </Button>
+        <ButtonLink href="/">Back to the demo</ButtonLink>
+        <ButtonLink href="/status" variant="ghost">
+          Check status
+        </ButtonLink>
       </div>
     </div>
   );

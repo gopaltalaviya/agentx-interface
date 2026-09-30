@@ -1,0 +1,153 @@
+'use client';
+
+import Link from 'next/link';
+import {usePathname} from 'next/navigation';
+import {useEffect, useRef, useState} from 'react';
+import {NetworkBadge} from './NetworkBadge';
+import {Icon} from './ui/Icon';
+
+/**
+ * The frame's top bar: where you are, where you can go, and which chain the
+ * money is on.
+ *
+ * The current section is marked (visually and with aria-current), so "where
+ * am I?" never needs the URL. Below the small breakpoint the links fold into
+ * a menu that closes on Escape, on navigation, and on a click outside.
+ */
+
+const LINKS = [
+  {href: '/', label: 'Demo', match: (p: string) => p === '/'},
+  {href: '/agents', label: 'Marketplace', match: (p: string) => p.startsWith('/agents')},
+  {href: '/register', label: 'Register', match: (p: string) => p.startsWith('/register')},
+  {href: '/runs', label: 'Runs', match: (p: string) => p.startsWith('/runs')},
+  {href: '/status', label: 'Status', match: (p: string) => p.startsWith('/status')},
+];
+
+export function SiteHeader() {
+  const pathname = usePathname() ?? '/';
+  const [open, setOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const menu = useRef<HTMLDivElement>(null);
+  const toggle = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => setOpen(false), [pathname]);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 4);
+    onScroll();
+    window.addEventListener('scroll', onScroll, {passive: true});
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpen(false);
+        toggle.current?.focus();
+      }
+    };
+    const onClick = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (!menu.current?.contains(target) && !toggle.current?.contains(target)) setOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onClick);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onClick);
+    };
+  }, [open]);
+
+  return (
+    <header
+      className={
+        'sticky top-0 z-40 border-b transition-[background-color,border-color,backdrop-filter] duration-300 ' +
+        (scrolled ? 'border-edge bg-ink/75 backdrop-blur-xl' : 'border-transparent bg-transparent')
+      }
+    >
+      <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-4 sm:px-6">
+        <Link href="/" className="group flex items-center gap-2 text-lg font-semibold tracking-tight">
+          <span
+            aria-hidden
+            className="grid size-7 place-items-center rounded-lg bg-gradient-to-br from-accent to-chain text-[13px] font-bold text-ink transition-transform duration-300 group-hover:rotate-6"
+          >
+            X
+          </span>
+          <span>
+            AGENT<span className="text-accent">X</span>
+          </span>
+        </Link>
+
+        <nav aria-label="Main" className="hidden items-center gap-1 text-sm md:flex">
+          {LINKS.map((link) => {
+            const active = link.match(pathname);
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                aria-current={active ? 'page' : undefined}
+                className={
+                  'relative rounded-lg px-3 py-1.5 transition-colors duration-200 ' +
+                  (active ? 'text-text' : 'text-muted hover:bg-raised/60 hover:text-text')
+                }
+              >
+                {link.label}
+                {active && (
+                  <span
+                    aria-hidden
+                    className="absolute inset-x-3 -bottom-[17px] h-px bg-gradient-to-r from-transparent via-accent to-transparent"
+                  />
+                )}
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* Which chain, and whether the money is real — on every page,
+            because it is the one fact a viewer must never have to guess. */}
+        <div className="ml-auto flex items-center gap-2">
+          <NetworkBadge />
+          <button
+            ref={toggle}
+            type="button"
+            aria-expanded={open}
+            aria-controls="mobile-nav"
+            aria-label={open ? 'Close menu' : 'Open menu'}
+            onClick={() => setOpen((o) => !o)}
+            className="grid size-9 place-items-center rounded-lg border border-edge text-muted transition-colors hover:text-text md:hidden"
+          >
+            <Icon name={open ? 'x' : 'menu'} />
+          </button>
+        </div>
+      </div>
+
+      <div
+        id="mobile-nav"
+        ref={menu}
+        hidden={!open}
+        className="border-t border-edge bg-ink/95 backdrop-blur-xl md:hidden"
+      >
+        <nav aria-label="Main" className="mx-auto grid max-w-6xl gap-1 px-4 py-3 animate-enter">
+          {LINKS.map((link) => {
+            const active = link.match(pathname);
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                aria-current={active ? 'page' : undefined}
+                className={
+                  'flex items-center justify-between rounded-lg px-3 py-3 text-sm ' +
+                  (active ? 'bg-raised text-text' : 'text-muted hover:bg-raised hover:text-text')
+                }
+              >
+                {link.label}
+                <Icon name="arrowRight" className="size-3.5 opacity-60" />
+              </Link>
+            );
+          })}
+        </nav>
+      </div>
+    </header>
+  );
+}

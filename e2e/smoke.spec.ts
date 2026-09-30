@@ -99,11 +99,51 @@ test('register explains itself without a wallet and validates before signing', a
   expect(errors).toEqual([]);
 });
 
+test('the status page says what is degraded, in words', async ({page}) => {
+  await page.goto('/status');
+  await expect(page.getByRole('heading', {level: 1})).toHaveText('System status');
+  await expect(page.getByText('Partially degraded')).toBeVisible();
+  const indexer = page.getByRole('listitem').filter({hasText: 'Indexer'});
+  await expect(indexer.getByText('Degraded')).toBeVisible();
+  await expect(page.getByText('400 blocks')).toBeVisible();
+});
+
+test('the menu works at phone width, and no page scrolls sideways', async ({page}) => {
+  await page.setViewportSize({width: 375, height: 800});
+  for (const path of ['/', '/agents', '/agents/1', '/register', '/runs', `/runs/${RUN_ID}`, '/status']) {
+    await page.goto(path);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow, `${path} overflows by ${overflow}px`).toBeLessThanOrEqual(0);
+  }
+  await page.goto('/');
+  const toggle = page.getByRole('button', {name: 'Open menu'});
+  await toggle.click();
+  await expect(page.locator('#mobile-nav').getByRole('link', {name: 'Marketplace'})).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#mobile-nav')).toBeHidden();
+});
+
+/** Motion off must lose nothing: sections that fade in on scroll are simply shown. */
+test('with reduced motion, every revealed section is fully visible without scrolling', async ({page}) => {
+  await page.emulateMedia({reducedMotion: 'reduce'});
+  await page.goto('/');
+  const how = page.getByRole('heading', {name: 'Three steps, each one on chain'});
+  await expect(how).toBeAttached();
+  const hidden = await page.evaluate(
+    () =>
+      [...document.querySelectorAll('[data-reveal]')].filter((el) => getComputedStyle(el).opacity !== '1')
+        .length,
+  );
+  expect(hidden).toBe(0);
+});
+
 test('every response carries the security headers', async ({request}) => {
   const res = await request.get('/');
   const headers = res.headers();
   expect(headers['content-security-policy']).toContain("frame-ancestors 'none'");
-  expect(headers['content-security-policy']).toContain('http://127.0.0.1:8787');
+  expect(headers['content-security-policy']).toContain(
+    `http://127.0.0.1:${process.env['MOCK_API_PORT'] ?? 8787}`,
+  );
   expect(headers['x-content-type-options']).toBe('nosniff');
   expect(headers['referrer-policy']).toBe('strict-origin-when-cross-origin');
   expect(headers['x-powered-by']).toBeUndefined();

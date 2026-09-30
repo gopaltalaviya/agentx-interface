@@ -1,8 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import {useState} from 'react';
+import {useId, useState} from 'react';
+import {Badge, type Tone} from '@/components/ui/Badge';
+import {Button} from '@/components/ui/Button';
+import {Card} from '@/components/ui/Card';
+import {Field, SecretInput} from '@/components/ui/Field';
+import {Icon} from '@/components/ui/Icon';
+import {PageHeader} from '@/components/ui/PageHeader';
+import {EmptyState, ErrorState, Loading, Skeleton} from '@/components/ui/States';
 import {api, type RunSummary} from '@/lib/api';
+import {relativeTime} from '@/lib/format';
 import {shortId} from '@/lib/links';
 
 /**
@@ -19,10 +27,10 @@ import {shortId} from '@/lib/links';
  * can read it — which is what makes a run shareable as evidence.
  */
 
-const STATE_TONE: Record<RunSummary['state'], string> = {
-  running: 'text-accent',
-  done: 'text-settled',
-  failed: 'text-broken',
+const STATE_TONE: Record<RunSummary['state'], Tone> = {
+  running: 'live',
+  done: 'settled',
+  failed: 'broken',
 };
 
 export default function RunsPage() {
@@ -30,6 +38,7 @@ export default function RunsPage() {
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const ids = {key: useId(), note: useId()};
 
   async function load() {
     setError(null);
@@ -45,81 +54,120 @@ export default function RunsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Runs</h1>
-        <p className="max-w-2xl text-sm text-muted">
-          Every goal an orchestrator was given, what it spent, and how each step ended. Open one for the full
-          trace — plan, hires, verdicts and settlements, each with its transaction.
-        </p>
-      </header>
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow="History"
+        title="Runs"
+        description="Every goal an orchestrator was given, what it spent, and how each step ended. Open one for the full trace — plan, hires, verdicts and settlements, each with its transaction."
+      />
 
-      <form
-        className="flex gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (key.trim()) void load();
-        }}
-      >
-        <label htmlFor="runs-api-key" className="sr-only">
-          Orchestrator API key
-        </label>
-        <input
-          id="runs-api-key"
-          type="password"
-          value={key}
-          onChange={(e) => setKey(e.target.value)}
-          placeholder="Orchestrator API key (ax_…)"
-          autoComplete="off"
-          spellCheck={false}
-          aria-describedby="runs-key-note"
-          className="tabular flex-1 rounded-md border border-edge bg-ink px-3 py-2 text-sm placeholder:text-muted"
-        />
-        <button
-          type="submit"
-          disabled={!key.trim() || loading}
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-ink disabled:opacity-40"
+      <Card>
+        <form
+          className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-start"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (key.trim()) void load();
+          }}
         >
-          {loading ? 'Loading…' : 'Show runs'}
-        </button>
-      </form>
-      <p id="runs-key-note" className="text-xs text-muted">
-        The key is used for this request only — it is never stored.
-      </p>
+          <Field
+            label="Orchestrator API key"
+            htmlFor={ids.key}
+            hintId={ids.note}
+            hint="The key is used for this request only — it is never stored. A run history is that agent's own business; a single run's link is public."
+          >
+            <SecretInput
+              id={ids.key}
+              value={key}
+              onChange={setKey}
+              aria-describedby={ids.note}
+              placeholder="Orchestrator API key (ax_…)"
+            />
+          </Field>
+          <Button type="submit" disabled={!key.trim()} loading={loading} className="sm:mt-[1.625rem]">
+            {loading ? 'Loading…' : 'Show runs'}
+          </Button>
+        </form>
+      </Card>
 
       {error && (
-        <p
-          role="alert"
-          className="rounded-md border border-broken/40 bg-broken/10 px-3 py-2 text-sm text-broken"
+        <ErrorState
+          title="Could not list runs"
+          action={
+            <Button variant="secondary" size="sm" onClick={() => void load()} disabled={!key.trim()}>
+              <Icon name="refresh" className="size-3.5" /> Retry
+            </Button>
+          }
         >
           {error}
-        </p>
+        </ErrorState>
+      )}
+
+      {loading && !runs && (
+        <Loading label="Loading runs">
+          <div className="space-y-2">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-16 rounded-xl" />
+            ))}
+          </div>
+        </Loading>
+      )}
+
+      {!runs && !loading && !error && (
+        <EmptyState icon="key" title="Enter an orchestrator key to see its runs">
+          Each run is also reachable by its own link — the demo shows it the moment a run starts.
+        </EmptyState>
       )}
 
       {runs && runs.length === 0 && (
-        <p className="py-8 text-sm text-muted">This orchestrator has no runs yet.</p>
+        <EmptyState
+          icon="activity"
+          title="This orchestrator has no runs yet."
+          action={
+            <Link href="/" className="text-sm text-accent hover:underline">
+              Start one from the demo
+            </Link>
+          }
+        />
       )}
 
       {runs && runs.length > 0 && (
-        <ul className="divide-y divide-edge rounded-lg border border-edge bg-surface">
-          {runs.map((run) => (
-            <li key={run.runId}>
-              <Link href={`/runs/${run.runId}`} className="block px-4 py-3 hover:bg-edge/40">
-                <div className="flex items-baseline justify-between gap-4">
-                  <span className="truncate text-sm">{run.goal}</span>
-                  <span className={`shrink-0 text-xs font-medium ${STATE_TONE[run.state]}`}>{run.state}</span>
-                </div>
-                <div className="mt-1 flex gap-4 text-xs text-muted">
-                  <span className="tabular" title={run.runId}>
-                    run {shortId(run.runId)}
-                  </span>
-                  <span className="tabular">spent {run.spentDisplay}</span>
-                  <span>{new Date(run.startedAt).toLocaleString()}</span>
-                </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <section aria-label="Runs" className="space-y-3">
+          <p className="text-xs text-muted" aria-live="polite">
+            {runs.length} run{runs.length === 1 ? '' : 's'}, newest first
+          </p>
+          <ul className="stagger space-y-2">
+            {runs.map((run, i) => (
+              <li key={run.runId} style={{'--i': i} as React.CSSProperties}>
+                <Link
+                  href={`/runs/${run.runId}`}
+                  className="card-interactive group flex items-center gap-4 rounded-xl border border-edge bg-surface/80 px-4 py-3.5 backdrop-blur-sm"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-3">
+                      <span className="truncate text-sm font-medium">{run.goal}</span>
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
+                      <Badge tone={STATE_TONE[run.state]} dot={run.state === 'running'}>
+                        {run.state}
+                      </Badge>
+                      <span className="tabular" title={run.runId}>
+                        run {shortId(run.runId)}
+                      </span>
+                      <span className="tabular">spent {run.spentDisplay}</span>
+                      <time dateTime={run.startedAt} title={new Date(run.startedAt).toLocaleString()}>
+                        {relativeTime(run.startedAt)}
+                      </time>
+                    </div>
+                  </div>
+                  <Icon
+                    name="arrowRight"
+                    className="size-4 text-muted transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-accent"
+                  />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </div>
   );

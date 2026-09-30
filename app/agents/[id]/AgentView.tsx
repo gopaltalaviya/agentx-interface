@@ -1,7 +1,15 @@
 'use client';
 
-import Link from 'next/link';
 import {useEffect, useState} from 'react';
+import {Badge, StatusDot, Tag} from '@/components/ui/Badge';
+import {Button, ButtonLink} from '@/components/ui/Button';
+import {Card} from '@/components/ui/Card';
+import {CopyButton} from '@/components/ui/CopyButton';
+import {Icon} from '@/components/ui/Icon';
+import {Monogram} from '@/components/ui/Monogram';
+import {CountUp} from '@/components/ui/Motion';
+import {PageHeader} from '@/components/ui/PageHeader';
+import {ErrorState, Loading, Skeleton} from '@/components/ui/States';
 import {ApiError, api, type AgentSummary} from '@/lib/api';
 import {safeHref} from '@/lib/links';
 
@@ -15,7 +23,8 @@ import {safeHref} from '@/lib/links';
  */
 export function AgentView({agentId}: {agentId: number}) {
   const [agent, setAgent] = useState<AgentSummary | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{message: string; missing: boolean} | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -26,95 +35,159 @@ export function AgentView({agentId}: {agentId: number}) {
       .then(setAgent)
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
-        setError(
-          err instanceof ApiError && err.code === 'NOT_FOUND'
+        const missing = err instanceof ApiError && err.code === 'NOT_FOUND';
+        setError({
+          missing,
+          message: missing
             ? `There is no agent #${agentId}.`
             : err instanceof Error
               ? err.message
               : 'could not load this agent',
-        );
+        });
       });
     return () => controller.abort();
-  }, [agentId]);
+  }, [agentId, attempt]);
+
+  const back = {href: '/agents', label: 'Marketplace'};
 
   if (error) {
     return (
-      <div className="space-y-4">
-        <p
-          role="alert"
-          className="rounded-md border border-broken/40 bg-broken/10 px-3 py-2 text-sm text-broken"
+      <div className="space-y-6">
+        <PageHeader back={back} title={error.missing ? 'Agent not found' : 'Could not load this agent'} />
+        <ErrorState
+          title={error.message}
+          action={
+            error.missing ? (
+              <ButtonLink href="/agents" size="sm">
+                Browse agents
+              </ButtonLink>
+            ) : (
+              <Button variant="secondary" size="sm" onClick={() => setAttempt((n) => n + 1)}>
+                <Icon name="refresh" className="size-3.5" /> Retry
+              </Button>
+            )
+          }
         >
-          {error}
-        </p>
-        <Link href="/agents" className="text-sm text-accent hover:underline">
-          ← back to the marketplace
-        </Link>
+          {error.missing
+            ? 'Agent ids are assigned in order as agents register; this one has not been assigned.'
+            : 'Nothing was spent and nothing was signed — this page only reads.'}
+        </ErrorState>
       </div>
     );
   }
 
   if (!agent) {
     return (
-      <p role="status" className="py-8 text-sm text-muted">
-        Loading…
-      </p>
+      <Loading label="Loading this agent">
+        <div className="space-y-8">
+          <Skeleton className="h-4 w-28" />
+          <div className="flex items-center gap-4">
+            <Skeleton className="size-14 rounded-xl" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-7 w-56" />
+              <Skeleton className="h-4 w-80 max-w-full" />
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-4">
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-20 rounded-xl" />
+            ))}
+          </div>
+          <Skeleton className="h-40 rounded-xl" />
+        </div>
+      </Loading>
     );
   }
 
   const attempts = agent.completed + agent.failed;
   const explorer = safeHref(agent.explorerUrl);
+  const rate = agent.successRate === null ? null : Math.round(agent.successRate * 100);
 
   return (
-    <div className="space-y-6">
-      <Link href="/agents" className="text-sm text-muted hover:text-text">
-        ← marketplace
-      </Link>
+    <div className="space-y-8">
+      <PageHeader
+        back={back}
+        eyebrow={`Agent #${agent.agentId}`}
+        title={
+          <span className="flex items-center gap-4">
+            <Monogram name={agent.name} size="size-12" />
+            <span>{agent.name}</span>
+          </span>
+        }
+        description={
+          <div className="space-y-3">
+            {agent.description && <p>{agent.description}</p>}
+            <div className="flex flex-wrap items-center gap-2">
+              {agent.capabilities.map((c) => (
+                <Tag key={c}>{c}</Tag>
+              ))}
+              <Badge tone={agent.active ? 'settled' : 'refused'} dot>
+                {agent.active ? 'accepting work' : 'not accepting work'}
+              </Badge>
+            </div>
+          </div>
+        }
+      />
 
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">{agent.name}</h1>
-        {agent.description && <p className="max-w-2xl text-sm text-muted">{agent.description}</p>}
-        <div className="flex flex-wrap gap-1">
-          {agent.capabilities.map((c) => (
-            <span key={c} className="rounded border border-edge px-1.5 py-0.5 text-xs text-muted">
-              {c}
-            </span>
-          ))}
-        </div>
-      </header>
-
-      <section className="grid gap-3 sm:grid-cols-4">
-        <Figure label="price per task" value={agent.priceDisplay} />
-        <Figure label="score" value={attempts === 0 ? 'unproven' : String(agent.score)} />
-        <Figure label="settled" value={String(agent.completed)} tone="text-settled" />
-        <Figure label="failed" value={String(agent.failed)} tone={agent.failed > 0 ? 'text-refused' : ''} />
+      <section aria-label="Figures" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Figure label="Price per task" value={agent.priceDisplay} />
+        <Figure
+          label="Score"
+          value={attempts === 0 ? 'unproven' : <CountUp value={agent.score} />}
+          hint={attempts === 0 ? 'starts at 50 — unknown, not bad' : 'out of 100'}
+        />
+        <Figure label="Settled" value={<CountUp value={agent.completed} />} tone="text-settled" />
+        <Figure
+          label="Failed"
+          value={<CountUp value={agent.failed} />}
+          tone={agent.failed > 0 ? 'text-refused' : ''}
+        />
       </section>
 
-      <section className="rounded-lg border border-edge bg-surface p-5 text-sm">
-        <h2 className="mb-2 font-medium">What this score is made of</h2>
-        {attempts === 0 ? (
-          <p className="text-muted">
-            Nothing has settled for this agent yet, so there is no reputation to report. It starts at 50 —
-            unknown, not bad — and only a completed on-chain payment moves it.
-          </p>
-        ) : (
-          <p className="text-muted">
-            {agent.completed} payment{agent.completed === 1 ? '' : 's'} settled on-chain and {agent.failed}{' '}
-            did not, a success rate of{' '}
-            <span className="tabular text-text">
-              {agent.successRate === null ? '—' : `${Math.round(agent.successRate * 100)}%`}
-            </span>
-            . Each of those was written by the escrow when money moved, which is why this agent cannot report
-            it itself.
-          </p>
-        )}
-      </section>
+      <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
+        <Card title="What this score is made of">
+          {attempts === 0 ? (
+            <p className="text-sm leading-relaxed text-muted">
+              Nothing has settled for this agent yet, so there is no reputation to report. It starts at 50 —
+              unknown, not bad — and only a completed on-chain payment moves it.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-sm leading-relaxed text-muted">
+                {agent.completed} payment{agent.completed === 1 ? '' : 's'} settled on-chain and{' '}
+                {agent.failed} did not, a success rate of{' '}
+                <span className="tabular text-text">{rate === null ? '—' : `${rate}%`}</span>. Each of those
+                was written by the escrow when money moved, which is why this agent cannot report it itself.
+              </p>
+              {rate !== null && (
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs text-muted">
+                    <span>success rate</span>
+                    <span className="tabular">{rate}%</span>
+                  </div>
+                  <span aria-hidden className="flex h-2 overflow-hidden rounded-full bg-edge">
+                    <span
+                      className="h-full bg-settled transition-[width] duration-700"
+                      style={{width: `${rate}%`}}
+                    />
+                    <span className="h-full bg-refused/70" style={{width: `${100 - rate}%`}} />
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
 
-      <section className="rounded-lg border border-edge bg-surface p-5 text-sm">
-        <h2 className="mb-2 font-medium">On-chain</h2>
-        <dl className="space-y-1">
-          <div className="flex gap-3">
-            <dt className="w-28 shrink-0 text-muted">wallet</dt>
-            <dd className="tabular min-w-0 break-all">
+        <Card className="flex items-center justify-center">
+          <ScoreRing score={attempts === 0 ? null : agent.score} />
+        </Card>
+      </div>
+
+      <Card title="On-chain">
+        <dl className="divide-y divide-edge text-sm">
+          <div className="flex flex-col gap-1 py-3 first:pt-0 sm:flex-row sm:items-center sm:gap-3">
+            <dt className="w-32 shrink-0 text-muted">Payout wallet</dt>
+            <dd className="tabular flex min-w-0 items-center gap-1 break-all">
               {explorer ? (
                 <a href={explorer} target="_blank" rel="noreferrer" className="text-accent hover:underline">
                   {agent.walletAddress}
@@ -123,23 +196,96 @@ export function AgentView({agentId}: {agentId: number}) {
               ) : (
                 agent.walletAddress
               )}
+              <CopyButton value={agent.walletAddress} label="Copy wallet address" />
             </dd>
           </div>
-          <div className="flex gap-3">
-            <dt className="w-28 shrink-0 text-muted">accepting work</dt>
-            <dd>{agent.active ? 'yes' : 'no'}</dd>
+          <div className="flex flex-col gap-1 py-3 last:pb-0 sm:flex-row sm:items-center sm:gap-3">
+            <dt className="w-32 shrink-0 text-muted">Accepting work</dt>
+            <dd className="flex items-center gap-2">
+              <StatusDot tone={agent.active ? 'settled' : 'refused'} />
+              {agent.active ? 'yes' : 'no'}
+            </dd>
           </div>
         </dl>
-      </section>
+      </Card>
     </div>
   );
 }
 
-function Figure({label, value, tone}: {label: string; value: string; tone?: string}) {
+function Figure({
+  label,
+  value,
+  hint,
+  tone = '',
+}: {
+  label: string;
+  value: React.ReactNode;
+  hint?: string;
+  tone?: string;
+}) {
   return (
-    <div className="rounded-lg border border-edge bg-surface px-4 py-3">
-      <div className="text-xs uppercase tracking-wide text-muted">{label}</div>
-      <div className={`tabular mt-1 text-lg font-medium ${tone ?? ''}`}>{value}</div>
+    <div className="rounded-xl border border-edge bg-surface/80 px-4 py-3 backdrop-blur-sm">
+      <div className="text-[11px] font-medium uppercase tracking-wider text-muted">{label}</div>
+      <div className={`tabular mt-1 text-xl font-semibold ${tone}`}>{value}</div>
+      {hint && <div className="mt-0.5 text-xs text-muted">{hint}</div>}
     </div>
+  );
+}
+
+/** The score as a ring, drawn in from zero — or an honest "unproven". */
+function ScoreRing({score}: {score: number | null}) {
+  const r = 52;
+  const c = 2 * Math.PI * r;
+  const [drawn, setDrawn] = useState(0);
+  useEffect(() => {
+    const t = requestAnimationFrame(() => setDrawn(score ?? 0));
+    return () => cancelAnimationFrame(t);
+  }, [score]);
+
+  return (
+    <figure className="flex flex-col items-center gap-2">
+      <svg
+        viewBox="0 0 128 128"
+        className="size-36"
+        role="img"
+        aria-label={score === null ? 'Unproven' : `Score ${score} of 100`}
+      >
+        <defs>
+          <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="var(--color-accent)" />
+            <stop offset="100%" stopColor="var(--color-settled)" />
+          </linearGradient>
+        </defs>
+        <circle cx="64" cy="64" r={r} fill="none" stroke="var(--color-edge)" strokeWidth="10" />
+        {score !== null && (
+          <circle
+            cx="64"
+            cy="64"
+            r={r}
+            fill="none"
+            stroke="url(#ring)"
+            strokeWidth="10"
+            strokeLinecap="round"
+            strokeDasharray={c}
+            strokeDashoffset={c * (1 - drawn / 100)}
+            transform="rotate(-90 64 64)"
+            style={{transition: 'stroke-dashoffset 1s var(--ease-out-soft)'}}
+          />
+        )}
+        <text
+          x="64"
+          y="64"
+          textAnchor="middle"
+          dominantBaseline="central"
+          className="fill-text font-semibold"
+          style={{fontSize: score === null ? 14 : 30, fontFamily: 'var(--font-mono)'}}
+        >
+          {score === null ? 'unproven' : score}
+        </text>
+      </svg>
+      <figcaption className="text-xs text-muted">
+        {score === null ? 'no settled jobs yet' : 'reputation score'}
+      </figcaption>
+    </figure>
   );
 }
