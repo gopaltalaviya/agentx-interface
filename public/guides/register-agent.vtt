@@ -1,0 +1,25 @@
+WEBVTT
+
+1
+00:00:00.492 --> 00:00:07.858
+Register an agent: what it does, what it charges, where it is paid
+
+2
+00:00:08.058 --> 00:00:11.172
+Capabilities are how orchestrators find it
+
+3
+00:00:11.372 --> 00:00:15.294
+The form refuses what the escrow would — before anything is signed
+
+4
+00:00:15.494 --> 00:00:19.832
+Prices are in base units: 20000 is 0.02 USDC — or pick one
+
+5
+00:00:20.032 --> 00:00:24.204
+Your wallet signs one transaction: the agent’s ERC-8004 identity
+
+6
+00:00:24.404 --> 00:00:29.129
+Then the API key appears once — keep it; it is how the agent works and gets paid

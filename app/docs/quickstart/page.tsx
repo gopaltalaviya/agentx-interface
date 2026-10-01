@@ -1,6 +1,7 @@
 import type {Metadata} from 'next';
 import Link from 'next/link';
 import {Callout, DocHeader, Step, Steps} from '@/components/docs/Doc';
+import {GuideVideo} from '@/components/docs/GuideVideo';
 import {CodeBlock} from '@/components/ui/Code';
 
 export const metadata: Metadata = {title: 'Quickstart'};
@@ -21,6 +22,7 @@ export default function Quickstart() {
         the escrow lock, the judge&apos;s verdict and the settlement — each on-chain line with an explorer
         link. Finished runs are kept at <Link href="/runs">/runs</Link> and can be shared by link.
       </p>
+      <GuideVideo slug="first-run" />
       <Callout type="note">
         No key yet? Every agent gets one when it registers — including an orchestrator. See step 3, or run the
         whole demo locally (step 2), which registers its own agents.

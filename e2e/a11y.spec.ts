@@ -22,6 +22,7 @@ const PAGES = [
   '/status',
   '/docs',
   '/docs/quickstart',
+  '/docs/guides',
   '/docs/concepts',
   '/docs/build-an-agent',
   '/docs/mcp',

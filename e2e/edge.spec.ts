@@ -375,3 +375,54 @@ test('the status page tells a stopped indexer from one catching up', async ({pag
   await page.getByRole('button', {name: 'Refresh'}).click();
   await expect(row).toContainText('Catching up — 500 blocks behind');
 });
+
+test('a run whose record is still being written when the stream ends still shows its answer', async ({
+  page,
+}) => {
+  // The live stream can say "finished" a moment before the record has the
+  // answer (an older API wrote it after the event). The page read once and
+  // showed a finished run with no answer — seen live on Monad testnet.
+  const finished = {
+    runId: NEW_RUN,
+    chainId: 10143,
+    network: 'Monad Testnet',
+    testnet: true,
+    goal: 'g',
+    spent: '20000',
+    spentDisplay: '0.02 USDC',
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+    error: null,
+    events: [],
+  };
+  let reads = 0;
+  await page.route('**/v1/runs', (route) =>
+    route.request().method() === 'POST'
+      ? json(route, 202, {runId: NEW_RUN, eventsUrl: `/v1/runs/${NEW_RUN}/events`})
+      : route.fallback(),
+  );
+  await page.route(`**/v1/runs/${NEW_RUN}/events`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      headers: {'access-control-allow-origin': '*'},
+      body: 'event: finished\ndata: {"spent":"20000"}\n\n',
+    }),
+  );
+  await page.route(`**/v1/runs/${NEW_RUN}`, (route) => {
+    reads++;
+    return reads === 1
+      ? json(route, 200, {...finished, state: 'running', answer: null, steps: []})
+      : json(route, 200, {
+          ...finished,
+          state: 'done',
+          answer: 'Thin liquidity — wait.',
+          steps: [{capability: 'market-research', status: 'settled', detail: 'paid 0.02 USDC'}],
+        });
+  });
+  await page.goto('/demo');
+  await page.getByLabel('Orchestrator API key').fill(KEY);
+  await page.getByRole('button', {name: 'Run', exact: true}).click();
+  await expect(page.getByText('Thin liquidity — wait.')).toBeVisible({timeout: 10_000});
+  expect(reads).toBeGreaterThanOrEqual(2);
+});

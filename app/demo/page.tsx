@@ -151,10 +151,23 @@ export default function DemoPage() {
           // Read the finished run once the stream closes: the row carries the
           // synthesised answer and the per-step outcomes, which the event
           // trace deliberately does not repeat.
-          api
-            .run(id)
-            .then(setDetail)
-            .catch((err: unknown) => console.warn('could not read the finished run', err));
+          // A server may still be writing the row when the stream closes (an
+          // older API wrote the answer after `finished`): read again, briefly,
+          // until it no longer says "running".
+          void (async () => {
+            for (let attempt = 0; attempt < 6; attempt++) {
+              try {
+                const run = await api.run(id);
+                setDetail(run);
+                if (run.state !== 'running') return;
+              } catch (err) {
+                // Only "still running" is worth waiting out; an error will not fix itself here.
+                console.warn('could not read the finished run', err);
+                return;
+              }
+              await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+            }
+          })();
         },
         setStream,
       );

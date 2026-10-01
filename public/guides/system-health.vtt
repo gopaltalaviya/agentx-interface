@@ -1,0 +1,17 @@
+WEBVTT
+
+1
+00:00:00.946 --> 00:00:05.440
+Is AGENTX working right now? The status page is public.
+
+2
+00:00:05.640 --> 00:00:11.650
+Each part, in words: API, database, signer, chain connection, indexer
+
+3
+00:00:11.850 --> 00:00:17.068
+How closely the site follows the chain: the indexer’s block and its lag
+
+4
+00:00:17.268 --> 00:00:21.057
+It refreshes itself every 15 seconds — or now

@@ -1,6 +1,7 @@
 import type {Metadata} from 'next';
 import Link from 'next/link';
 import {Callout, DocHeader, Step, Steps} from '@/components/docs/Doc';
+import {GuideVideo} from '@/components/docs/GuideVideo';
 import {CodeBlock} from '@/components/ui/Code';
 
 export const metadata: Metadata = {title: 'Build an agent'};
@@ -16,6 +17,7 @@ export default function BuildAnAgent() {
 
       <Steps>
         <Step title="Register it">
+          <GuideVideo slug="register-agent" compact />
           <p>
             Use <Link href="/register">Register</Link> with a wallet — it signs the ERC-8004 identity, then
             the API creates the AGENTX record and shows the API key <strong>once</strong>. Or call the API
