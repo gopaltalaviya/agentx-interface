@@ -131,13 +131,48 @@ export class ApiError extends Error {
   }
 }
 
-async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {cache: 'no-store', ...(signal ? {signal} : {})});
-  if (!res.ok) {
-    const problem = (await res.json().catch(() => ({}))) as {code?: string; detail?: string};
-    throw new ApiError(problem.code ?? 'UNKNOWN', problem.detail ?? `${path} failed (${res.status})`);
+/** Messages for the two failures that are not the API speaking. */
+export const UNREACHABLE =
+  'Cannot reach the AGENTX API — check your connection, or see the status page. Nothing was spent.';
+export const BAD_RESPONSE =
+  'The API sent an unexpected answer (not a valid response) — often a proxy or a deploy in progress. Try again in a moment.';
+
+/**
+ * Every request goes through here, so every failure reads the same way:
+ * the API's own RFC 7807 problem when it sent one; otherwise one of two
+ * sentences a person can act on — never "Failed to fetch" or a JSON parser's
+ * "Unexpected token '<'".
+ */
+async function request<T>(path: string, init: RequestInit, fallback: string): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {cache: 'no-store', ...init});
+  } catch (err) {
+    if ((err as {name?: string})?.name === 'AbortError') throw err;
+    throw new ApiError('UNREACHABLE', UNREACHABLE);
   }
-  return (await res.json()) as T;
+  const text = await res.text().catch(() => '');
+  let body: unknown;
+  try {
+    body = text ? JSON.parse(text) : undefined;
+  } catch {
+    body = undefined;
+  }
+  if (!res.ok) {
+    const problem = (body ?? {}) as {code?: string; detail?: string};
+    if (!problem.code && !problem.detail && res.status >= 500)
+      throw new ApiError(
+        'UPSTREAM_UNAVAILABLE',
+        `The API had a problem (${res.status}). Try again in a moment.`,
+      );
+    throw new ApiError(problem.code ?? 'UNKNOWN', problem.detail ?? `${fallback} (${res.status})`);
+  }
+  if (body === undefined) throw new ApiError('BAD_RESPONSE', BAD_RESPONSE);
+  return body as T;
+}
+
+function get<T>(path: string, signal?: AbortSignal): Promise<T> {
+  return request<T>(path, signal ? {signal} : {}, `${path} failed`);
 }
 
 export interface RegisteredAgent {
@@ -206,15 +241,12 @@ export const api = {
    * used for the request and never stored.
    */
   async runs(apiKey: string, limit = 50): Promise<RunSummary[]> {
-    const res = await fetch(`${API_URL}/v1/runs?limit=${limit}`, {
-      cache: 'no-store',
-      headers: {authorization: `Bearer ${apiKey}`},
-    });
-    if (!res.ok) {
-      const problem = (await res.json().catch(() => ({}))) as {code?: string; detail?: string};
-      throw new ApiError(problem.code ?? 'UNKNOWN', problem.detail ?? `could not list runs (${res.status})`);
-    }
-    return ((await res.json()) as {runs: RunSummary[]}).runs;
+    const body = await request<{runs: RunSummary[]}>(
+      `/v1/runs?limit=${limit}`,
+      {headers: {authorization: `Bearer ${apiKey}`}},
+      'could not list runs',
+    );
+    return body.runs;
   },
 
   /**
@@ -234,16 +266,11 @@ export const api = {
     /** The ERC-8004 id; the API checks it against the registry before storing it. */
     chainAgentId?: string;
   }): Promise<RegisteredAgent> {
-    const res = await fetch(`${API_URL}/v1/agents`, {
-      method: 'POST',
-      headers: {'content-type': 'application/json'},
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const problem = (await res.json().catch(() => ({}))) as {code?: string; detail?: string};
-      throw new ApiError(problem.code ?? 'UNKNOWN', problem.detail ?? `registration failed (${res.status})`);
-    }
-    return (await res.json()) as RegisteredAgent;
+    return request<RegisteredAgent>(
+      '/v1/agents',
+      {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body)},
+      'registration failed',
+    );
   },
 
   /**
@@ -255,16 +282,15 @@ export const api = {
    * that machine.
    */
   async startRun(goal: string, apiKey: string): Promise<{runId: string; eventsUrl: string}> {
-    const res = await fetch(`${API_URL}/v1/runs`, {
-      method: 'POST',
-      headers: {'content-type': 'application/json', authorization: `Bearer ${apiKey}`},
-      body: JSON.stringify({goal}),
-    });
-    if (!res.ok) {
-      const problem = (await res.json().catch(() => ({}))) as {code?: string; detail?: string};
-      throw new ApiError(problem.code ?? 'UNKNOWN', problem.detail ?? `could not start (${res.status})`);
-    }
-    return (await res.json()) as {runId: string; eventsUrl: string};
+    return request<{runId: string; eventsUrl: string}>(
+      '/v1/runs',
+      {
+        method: 'POST',
+        headers: {'content-type': 'application/json', authorization: `Bearer ${apiKey}`},
+        body: JSON.stringify({goal}),
+      },
+      'could not start',
+    );
   },
 };
 
@@ -276,10 +302,18 @@ export const api = {
  * late, or refreshed mid-run, still shows the whole story. Returns an
  * unsubscribe function.
  */
+export type StreamState = 'open' | 'reconnecting' | 'lost';
+
 export function subscribeToRun(
   runId: string,
   onEvent: (event: RunEvent) => void,
   onClose?: () => void,
+  /**
+   * Connection state, so a dropped stream is said rather than looking like a
+   * run that never ends: `reconnecting` after an error, `lost` after three in
+   * a row (the browser keeps retrying; `open` again if it gets back).
+   */
+  onConnection?: (state: StreamState) => void,
 ): () => void {
   const source = new EventSource(`${API_URL}/v1/runs/${encodeURIComponent(runId)}/events`);
 
@@ -315,9 +349,19 @@ export function subscribeToRun(
     });
   }
 
+  let failures = 0;
+  source.onopen = () => {
+    failures = 0;
+    onConnection?.('open');
+  };
   source.onerror = () => {
     // EventSource retries on its own. Only a closed source is terminal.
-    if (source.readyState === EventSource.CLOSED) onClose?.();
+    if (source.readyState === EventSource.CLOSED) {
+      onClose?.();
+      return;
+    }
+    failures += 1;
+    onConnection?.(failures >= 3 ? 'lost' : 'reconnecting');
   };
 
   return () => source.close();

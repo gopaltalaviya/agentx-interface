@@ -83,7 +83,7 @@ export default function Concepts() {
             <td>
               <code>expireDispute</code>
             </td>
-            <td>settles for the worker, no review either way</td>
+            <td>after the dispute timeout, settles for the worker — no review either way</td>
             <td>1 h</td>
           </tr>
         </tbody>

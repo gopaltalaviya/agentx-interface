@@ -1,0 +1,342 @@
+import {expect, test, type Page, type Route} from '@playwright/test';
+
+/**
+ * Edge, critical and worst cases, in a real browser against the production
+ * build. Each test makes the API misbehave in one specific way with
+ * page.route(); the mock API answers everything else as usual.
+ */
+
+const RUN_ID = '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b';
+const NEW_RUN = '7e1d2c3b-4a59-4687-9a0b-112233445566';
+const KEY = 'ax_0123456789abcdef_secretsecretsecretsecret00';
+const XSS = '<img src=x onerror="window.__xss=1"><script>window.__xss=1</script>';
+
+const json = (route: Route, status: number, body: unknown) =>
+  route.fulfill({
+    status,
+    contentType: 'application/json',
+    headers: {'access-control-allow-origin': '*'},
+    body: JSON.stringify(body),
+  });
+
+const agent = (agentId: number, extra: Record<string, unknown> = {}) => ({
+  agentId,
+  chainId: 10143,
+  chainAgentId: String(100 + agentId),
+  name: `Agent ${agentId}`,
+  description: 'does things',
+  capabilities: ['market-research'],
+  pricePerTask: '20000',
+  priceDisplay: '0.02 USDC',
+  walletAddress: '0x0000000000000000000000000000000000000002',
+  score: 60,
+  completed: 2,
+  failed: 0,
+  successRate: 1,
+  active: true,
+  explorerUrl: 'https://testnet.monadexplorer.com/address/0x0000000000000000000000000000000000000002',
+  ...extra,
+});
+
+async function noUncaughtErrors(page: Page) {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  return errors;
+}
+
+// ── Critical: money ────────────────────────────────────────────────────────
+
+test('critical: double-clicking Run, or Ctrl+Enter twice, starts exactly ONE run', async ({page}) => {
+  let starts = 0;
+  await page.route('**/v1/runs', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    starts++;
+    await new Promise((r) => setTimeout(r, 600)); // a slow API makes a double submit likely
+    return json(route, 202, {runId: NEW_RUN, eventsUrl: `/v1/runs/${NEW_RUN}/events`});
+  });
+  await page.route(`**/v1/runs/${NEW_RUN}/events`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      headers: {'access-control-allow-origin': '*'},
+      body: 'event: finished\ndata: {"spent":"0"}\n\n',
+    }),
+  );
+  await page.goto('/demo');
+  await page.getByLabel('Orchestrator API key').fill(KEY);
+  await page.getByRole('button', {name: 'Run', exact: true}).dblclick();
+  await page.getByLabel('Goal').press('Control+Enter');
+  await page.getByLabel('Goal').press('Control+Enter');
+  await page.waitForTimeout(1500);
+  expect(starts).toBe(1);
+});
+
+test('critical: the key is sent trimmed, and only in the Authorization header', async ({page}) => {
+  let auth = '';
+  let body = '';
+  await page.route('**/v1/runs', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    auth = route.request().headers()['authorization'] ?? '';
+    body = route.request().postData() ?? '';
+    return json(route, 401, {code: 'UNAUTHORIZED', detail: 'unknown key'});
+  });
+  await page.goto('/demo');
+  await page.getByLabel('Orchestrator API key').fill(`   ${KEY}  \n`);
+  await page.getByRole('button', {name: 'Run', exact: true}).click();
+  await expect(page.getByText('The run did not start')).toBeVisible();
+  expect(auth).toBe(`Bearer ${KEY}`);
+  expect(body).not.toContain(KEY);
+});
+
+test('critical: register refuses what the API would refuse — before the wallet signs anything', async ({
+  page,
+}) => {
+  await page.goto('/register');
+  await page.getByLabel('Name').fill('N'.repeat(65));
+  await expect(page.getByText(/64 characters at most/)).toBeVisible();
+  await page.getByLabel('Name').fill('ResearchBot');
+  await page.getByLabel('What it does').fill('d'.repeat(1001));
+  await expect(page.getByText(/1,000 characters at most/)).toBeVisible();
+  await page.getByLabel('What it does').fill('');
+  await page.getByLabel('Capabilities').fill(Array.from({length: 17}, (_, i) => `cap-${i}`).join(','));
+  await expect(page.getByText(/16 capabilities at most/)).toBeVisible();
+  await page.getByLabel('Capabilities').fill('market-research');
+  await page.getByLabel(/Price per task/).fill('9'.repeat(40));
+  await expect(page.getByText(/larger than the escrow can hold/)).toBeVisible();
+});
+
+// ── The API misbehaving ────────────────────────────────────────────────────
+
+for (const [label, path, pattern] of [
+  ['marketplace', '/agents', '**/v1/agents?*'],
+  ['agent profile', '/agents/1', '**/v1/agents/1'],
+  ['run record', `/runs/${RUN_ID}`, `**/v1/runs/${RUN_ID}`],
+] as const) {
+  test(`${label}: a 500 shows a readable error, and Retry recovers`, async ({page}) => {
+    const errors = await noUncaughtErrors(page);
+    let calls = 0;
+    await page.route(pattern, (route) => {
+      calls++;
+      return calls === 1 ? json(route, 500, {code: 'INTERNAL', detail: 'boom'}) : route.fallback();
+    });
+    await page.goto(path);
+    await expect(
+      page
+        .getByRole('alert')
+        .filter({hasText: /Could not|failed|boom/i})
+        .first(),
+    ).toBeVisible();
+    await page.getByRole('button', {name: /Retry/}).click();
+    await expect(page.getByRole('alert').filter({hasText: /Could not|boom/i})).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
+}
+
+test('malformed JSON from the API is reported in words, not as a parser error', async ({page}) => {
+  await page.route('**/v1/agents?*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      headers: {'access-control-allow-origin': '*'},
+      body: '<html>proxy error</html>',
+    }),
+  );
+  await page.goto('/agents');
+  const alert = page.getByRole('alert').first();
+  await expect(alert).toBeVisible();
+  await expect(alert).not.toContainText(/Unexpected token|JSON\.parse|SyntaxError/);
+  await expect(alert).toContainText(/not a valid response|unexpected answer/i);
+});
+
+test('an unreachable API is reported as such, not as a raw "Failed to fetch"', async ({page}) => {
+  await page.route('**/v1/agents?*', (route) => route.abort('internetdisconnected'));
+  await page.goto('/agents');
+  const alert = page.getByRole('alert').first();
+  await expect(alert).toBeVisible();
+  await expect(alert).toContainText(/cannot reach the AGENTX API/i);
+});
+
+test('a hanging API shows loading, never a blank page', async ({page}) => {
+  await page.route('**/v1/agents?*', () => new Promise(() => {})); // never answers
+  await page.goto('/agents');
+  await expect(page.getByRole('heading', {level: 1})).toHaveText('Marketplace');
+  await expect(page.getByRole('status').filter({hasText: /Loading agents/})).toBeAttached();
+});
+
+// ── Hostile and unusual data ───────────────────────────────────────────────
+
+test('hostile strings from the API render as text and never run', async ({page}) => {
+  await page.route('**/v1/agents?*', (route) =>
+    json(route, 200, {agents: [agent(1, {name: XSS, description: XSS, capabilities: ['x-s-s']})]}),
+  );
+  await page.route('**/v1/agents/1', (route) => json(route, 200, agent(1, {name: XSS, description: XSS})));
+  await page.goto('/agents');
+  await expect(page.getByText(XSS).first()).toBeVisible();
+  await page.goto('/agents/1');
+  await expect(page.getByRole('heading', {level: 1})).toContainText('<img');
+  expect(await page.evaluate(() => (window as unknown as {__xss?: number}).__xss)).toBeUndefined();
+  await expect(page.locator('img[src="x"]')).toHaveCount(0);
+});
+
+test('a 300-character unbroken name, RTL and emoji: no sideways scroll on a phone', async ({page}) => {
+  await page.setViewportSize({width: 375, height: 800});
+  const long = 'A'.repeat(300);
+  await page.route('**/v1/agents?*', (route) =>
+    json(route, 200, {agents: [agent(1, {name: long}), agent(2, {name: 'وكيل البحث 🔍🤖 Агент'})]}),
+  );
+  await page.route('**/v1/agents/1', (route) => json(route, 200, agent(1, {name: long, description: long})));
+  for (const path of ['/agents', '/agents/1']) {
+    await page.goto(path);
+    await page.waitForLoadState('networkidle');
+    const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(over, `${path} overflows by ${over}px`).toBeLessThanOrEqual(0);
+  }
+  await page.goto('/agents');
+  await expect(page.getByText('وكيل البحث 🔍🤖 Агент')).toBeVisible();
+});
+
+test('missing and null optional fields do not break a profile', async ({page}) => {
+  const errors = await noUncaughtErrors(page);
+  await page.route('**/v1/agents/1', (route) =>
+    json(
+      route,
+      200,
+      agent(1, {
+        description: null,
+        chainAgentId: null,
+        successRate: null,
+        completed: 0,
+        failed: 0,
+        explorerUrl: '',
+      }),
+    ),
+  );
+  await page.goto('/agents/1');
+  await expect(page.getByText(/not registered on chain/)).toBeVisible();
+  await expect(page.getByText('unproven').first()).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('volume: 100 agents and a 500-event trace render', async ({page}) => {
+  await page.route('**/v1/agents?*', (route) =>
+    json(route, 200, {agents: Array.from({length: 100}, (_, i) => agent(i + 1))}),
+  );
+  await page.goto('/agents');
+  await expect(page.getByText('View profile')).toHaveCount(100);
+
+  const events = Array.from({length: 500}, (_, i) => ({
+    kind: i % 2 ? 'discovered' : 'selected',
+    payload: {
+      capability: 'market-research',
+      candidates: 1,
+      agentId: 2,
+      price: '0.02 USDC',
+      reason: `step ${i}`,
+    },
+    occurredAt: new Date(Date.UTC(2026, 8, 30, 12, 0, 0) + i * 100).toISOString(),
+  }));
+  await page.route(`**/v1/runs/${RUN_ID}`, (route) =>
+    json(route, 200, {
+      runId: RUN_ID,
+      chainId: 10143,
+      network: 'Monad Testnet',
+      testnet: true,
+      goal: 'Big run',
+      state: 'done',
+      spent: '0',
+      spentDisplay: '0 USDC',
+      startedAt: '2026-09-30T12:00:00Z',
+      finishedAt: '2026-09-30T12:01:00Z',
+      answer: 'ok',
+      error: null,
+      steps: [],
+      events,
+    }),
+  );
+  const t0 = Date.now();
+  await page.goto(`/runs/${RUN_ID}`);
+  await expect(page.getByRole('list', {name: 'Run trace'}).locator('li')).toHaveCount(500);
+  expect(Date.now() - t0).toBeLessThan(8000);
+});
+
+test('every way a step can end is named in words', async ({page}) => {
+  const statuses = [
+    'settled',
+    'disputed',
+    'unrecoverable',
+    'no-candidate',
+    'budget-exceeded',
+    'timeout',
+    'failed',
+  ];
+  await page.route(`**/v1/runs/${RUN_ID}`, (route) =>
+    json(route, 200, {
+      runId: RUN_ID,
+      chainId: 10143,
+      network: 'Monad Testnet',
+      testnet: true,
+      goal: 'Every outcome',
+      state: 'failed',
+      spent: '0',
+      spentDisplay: '0 USDC',
+      startedAt: '2026-09-30T12:00:00Z',
+      finishedAt: null,
+      answer: null,
+      error: 'the model could not be reached',
+      steps: statuses.map((status) => ({capability: `cap-${status}`, status, detail: `why ${status}`})),
+      events: [
+        {kind: 'plan-failed', payload: {reason: 'model unreachable'}, occurredAt: '2026-09-30T12:00:01Z'},
+      ],
+    }),
+  );
+  await page.goto(`/runs/${RUN_ID}`);
+  for (const s of statuses) await expect(page.getByText(s, {exact: true}).first()).toBeVisible();
+  await expect(page.getByText('The run failed')).toBeVisible();
+  await expect(page.getByText(/no plan — model unreachable/)).toBeVisible();
+});
+
+// ── The live stream failing ────────────────────────────────────────────────
+
+test('worst case: the live stream drops mid-run — the page says so and links the record', async ({page}) => {
+  await page.route('**/v1/runs', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    return json(route, 202, {runId: NEW_RUN, eventsUrl: `/v1/runs/${NEW_RUN}/events`});
+  });
+  await page.route(`**/v1/runs/${NEW_RUN}/events`, (route) => route.abort('connectionreset'));
+  await page.goto('/demo');
+  await page.getByLabel('Orchestrator API key').fill(KEY);
+  await page.getByRole('button', {name: 'Run', exact: true}).click();
+  await expect(page.getByText(/connection to the live trace was lost/i)).toBeVisible({timeout: 20000});
+  await expect(page.getByRole('link', {name: /open the run record/i})).toHaveAttribute(
+    'href',
+    `/runs/${NEW_RUN}`,
+  );
+});
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+
+test('deep links to a docs section land on it; back and forward work', async ({page}) => {
+  await page.goto('/docs/concepts#exits');
+  await expect(page.locator('#exits')).toBeInViewport();
+  await page
+    .getByRole('link', {name: /Build an agent/})
+    .first()
+    .click();
+  await page.waitForURL('**/docs/build-an-agent');
+  await page.goBack();
+  await expect(page).toHaveURL(/\/docs\/concepts/);
+  await page.goForward();
+  await expect(page).toHaveURL(/\/docs\/build-an-agent/);
+});
+
+test('the header fits a 320px phone on every main page (menu button reachable)', async ({page}) => {
+  await page.setViewportSize({width: 320, height: 700});
+  for (const path of ['/', '/agents', '/demo', '/status', '/register', '/docs', '/docs/concepts']) {
+    await page.goto(path);
+    await page.waitForLoadState('networkidle');
+    const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(over, `${path} overflows by ${over}px`).toBeLessThanOrEqual(0);
+    const menu = await page.getByRole('button', {name: /menu/i}).boundingBox();
+    expect(menu!.x + menu!.width, `${path}: menu button off-screen`).toBeLessThanOrEqual(320);
+  }
+});

@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import {usePathname} from 'next/navigation';
+import {SearchButton} from '@/components/search/SearchButton';
 import {Icon} from '@/components/ui/Icon';
 
 /**
@@ -40,6 +41,7 @@ export function DocsSidebar() {
   const path = usePathname() ?? '/docs';
   return (
     <nav aria-label="Documentation" className="space-y-6 text-sm">
+      <SearchButton wide />
       {DOCS.map((s) => (
         <div key={s.section} className="space-y-2">
           <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted">{s.section}</p>

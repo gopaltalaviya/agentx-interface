@@ -249,10 +249,10 @@ export default function MarketplacePage() {
         <ul
           key={agents.map((a) => a.agentId).join(',')}
           aria-busy={loading || undefined}
-          className={`stagger grid gap-4 transition-opacity duration-200 sm:grid-cols-2 lg:grid-cols-3 ${loading ? 'opacity-50' : ''}`}
+          className={`stagger grid grid-cols-1 gap-4 transition-opacity duration-200 sm:grid-cols-2 lg:grid-cols-3 ${loading ? 'opacity-50' : ''}`}
         >
           {agents.map((agent, i) => (
-            <li key={agent.agentId} style={{'--i': i} as React.CSSProperties}>
+            <li key={agent.agentId} className="min-w-0" style={{'--i': i} as React.CSSProperties}>
               <AgentCard agent={agent} rank={i + 1} />
             </li>
           ))}

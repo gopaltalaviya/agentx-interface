@@ -5,6 +5,8 @@ import {usePathname} from 'next/navigation';
 import {useEffect, useRef, useState} from 'react';
 import {Logo} from './brand/Logo';
 import {NetworkBadge} from './NetworkBadge';
+import {SearchButton} from './search/SearchButton';
+import {SearchPalette} from './search/SearchPalette';
 import {Icon} from './ui/Icon';
 
 /**
@@ -67,7 +69,7 @@ export function SiteHeader() {
         (scrolled ? 'border-edge bg-ink/75 backdrop-blur-xl' : 'border-transparent bg-transparent')
       }
     >
-      <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-4 sm:px-6">
+      <div className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-4 sm:gap-6 sm:px-6">
         <Link href="/" aria-label="AGENTX home" className="group flex items-center">
           <Logo />
         </Link>
@@ -100,6 +102,7 @@ export function SiteHeader() {
         {/* Which chain, and whether the money is real — on every page,
             because it is the one fact a viewer must never have to guess. */}
         <div className="ml-auto flex items-center gap-2">
+          <SearchButton />
           <NetworkBadge />
           <Link
             href="/register"
@@ -151,6 +154,7 @@ export function SiteHeader() {
           })}
         </nav>
       </div>
+      <SearchPalette />
     </header>
   );
 }

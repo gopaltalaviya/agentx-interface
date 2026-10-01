@@ -84,12 +84,21 @@ export default function RegisterPage() {
   // the escrow minimum is an agent that can be registered but never hired.
   const payoutInvalid = payout !== '' && !isAddress(payout);
   const minimum = network?.minJobAmount;
-  const priceTooLow = price !== '' && minimum !== undefined && BigInt(price) < BigInt(minimum);
+  const priceTooLow =
+    price !== '' && price.length <= 39 && minimum !== undefined && BigInt(price) < BigInt(minimum);
   const parsedCaps = capabilities
     .split(',')
     .map((c) => c.trim())
     .filter(Boolean);
   const badCaps = parsedCaps.filter((c) => !validCapability(c));
+  // The API's limits (apps/api routes/agents.ts RegisterBody), checked here because
+  // the identity is signed on chain FIRST: a record the API then refuses leaves an
+  // ERC-8004 identity that paid gas and lists nothing.
+  const nameTooLong = name.length > 64;
+  const descTooLong = description.length > 1000;
+  const tooManyCaps = parsedCaps.length > 16;
+  const priceTooBig = price.length > 39; // uint128
+  const formInvalid = nameTooLong || descTooLong || tooManyCaps || priceTooBig || parsedCaps.length === 0;
 
   // Presets in the token's own units: the escrow minimum, and two common prices.
   const presets =
@@ -208,7 +217,12 @@ export default function RegisterPage() {
         )}
 
         <Card className="space-y-5">
-          <Field label="Name" htmlFor="reg-name" hint="How it appears in the marketplace.">
+          <Field
+            label="Name"
+            htmlFor="reg-name"
+            hint="How it appears in the marketplace."
+            error={nameTooLong ? `64 characters at most (this is ${name.length}).` : undefined}
+          >
             <TextInput
               id="reg-name"
               value={name}
@@ -219,7 +233,16 @@ export default function RegisterPage() {
             />
           </Field>
 
-          <Field label="What it does" htmlFor="reg-description" hint="Optional, shown on its profile.">
+          <Field
+            label="What it does"
+            htmlFor="reg-description"
+            hint="Optional, shown on its profile."
+            error={
+              descTooLong
+                ? `1,000 characters at most (this is ${description.length.toLocaleString('en')}).`
+                : undefined
+            }
+          >
             <TextInput
               id="reg-description"
               value={description}
@@ -238,8 +261,10 @@ export default function RegisterPage() {
               hint="Lowercase kebab-case, comma separated — the orchestrator hires by these."
               error={
                 badCaps.length > 0
-                  ? `Not lowercase kebab-case (2–64 characters): ${badCaps.join(', ')}`
-                  : undefined
+                  ? `Not lowercase kebab-case (2–64 characters): ${badCaps.slice(0, 5).join(', ')}${badCaps.length > 5 ? '…' : ''}`
+                  : tooManyCaps
+                    ? `16 capabilities at most (this is ${parsedCaps.length}).`
+                    : undefined
               }
             >
               <TextInput
@@ -273,6 +298,7 @@ export default function RegisterPage() {
                   ? `Base units — ${network.paymentToken.symbol} has ${network.paymentToken.decimals} decimals, so 20000 is 0.02.`
                   : 'Base units.'
               }
+              error={priceTooBig ? 'That is larger than the escrow can hold (a uint128).' : undefined}
               warning={
                 priceTooLow && minimum !== undefined && network
                   ? `Below the escrow minimum of ${formatUnits(minimum, network.paymentToken.decimals)} ${network.paymentToken.symbol} — the escrow refuses any job cheaper than that, so this agent could never be hired.`
@@ -383,7 +409,8 @@ export default function RegisterPage() {
                 price === '' ||
                 priceTooLow ||
                 payoutInvalid ||
-                badCaps.length > 0
+                badCaps.length > 0 ||
+                formInvalid
               }
               className="ml-auto"
             >

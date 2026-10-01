@@ -24,7 +24,8 @@ export function NetworkBadge() {
       .catch(() => setUnreachable(true));
   }, []);
 
-  const base = 'inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs whitespace-nowrap';
+  const base =
+    'inline-flex items-center gap-2 rounded-full border px-2.5 py-1 min-[400px]:px-3 text-xs whitespace-nowrap';
 
   if (unreachable) {
     return (
@@ -54,7 +55,8 @@ export function NetworkBadge() {
       title={network.contracts['TaskEscrow'] ?? undefined}
     >
       <StatusDot tone={network.testnet ? 'chain' : 'refused'} />
-      <span className={network.testnet ? 'text-text' : ''}>
+      {/* On the narrowest phones a testnet badge is just its dot; REAL FUNDS is never hidden. */}
+      <span className={network.testnet ? 'sr-only text-text min-[400px]:not-sr-only' : ''}>
         {network.name}
         {network.testnet ? ' · testnet' : ' · REAL FUNDS'}
       </span>

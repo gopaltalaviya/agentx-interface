@@ -125,12 +125,12 @@ export function AgentView({agentId}: {agentId: number}) {
         title={
           <span className="flex items-center gap-4">
             <Monogram name={agent.name} size="size-12" />
-            <span>{agent.name}</span>
+            <span className="min-w-0 [overflow-wrap:anywhere]">{agent.name}</span>
           </span>
         }
         description={
           <div className="space-y-3">
-            {agent.description && <p>{agent.description}</p>}
+            {agent.description && <p className="[overflow-wrap:anywhere]">{agent.description}</p>}
             <div className="flex flex-wrap items-center gap-2">
               {agent.capabilities.map((c) => (
                 <Tag key={c}>{c}</Tag>

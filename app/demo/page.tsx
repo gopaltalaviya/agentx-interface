@@ -21,6 +21,7 @@ import {
   type NetworkInfo,
   type RunDetail,
   type RunEvent,
+  type StreamState,
 } from '@/lib/api';
 import {shortId} from '@/lib/links';
 
@@ -87,6 +88,7 @@ export default function DemoPage() {
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [finished, setFinished] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [stream, setStream] = useState<StreamState>('open');
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<RunDetail | null>(null);
   const [network, setNetwork] = useState<NetworkInfo | null>(null);
@@ -120,6 +122,7 @@ export default function DemoPage() {
     setEvents([]);
     setDetail(null);
     setFinished(false);
+    setStream('open');
     setStarting(true);
     unsubscribe.current?.();
 
@@ -153,6 +156,7 @@ export default function DemoPage() {
             .then(setDetail)
             .catch((err: unknown) => console.warn('could not read the finished run', err));
         },
+        setStream,
       );
     } catch (err) {
       setError(
@@ -362,7 +366,11 @@ export default function DemoPage() {
                 <span className="tabular font-medium">{spend ?? '—'}</span>
               </span>
               <span role="status" className="ml-auto">
-                {running ? (
+                {running && stream !== 'open' ? (
+                  <Badge tone="refused" dot>
+                    reconnecting…
+                  </Badge>
+                ) : running ? (
                   <Badge tone="live" dot>
                     live
                   </Badge>
@@ -372,6 +380,20 @@ export default function DemoPage() {
               </span>
             </div>
             <Progress phase={phase} running={running} />
+            {running && stream === 'lost' && (
+              <div
+                role="alert"
+                className="flex flex-col gap-2 rounded-lg border border-refused/30 bg-refused/[0.07] px-4 py-3 text-sm sm:flex-row sm:items-center"
+              >
+                <p className="flex-1 text-refused">
+                  The connection to the live trace was lost. The run continues on the server — nothing is
+                  cancelled — and this page keeps trying to reconnect.
+                </p>
+                <Link href={`/runs/${runId}`} className="shrink-0 text-accent underline">
+                  Open the run record
+                </Link>
+              </div>
+            )}
           </Card>
 
           <Card title="Trace" description="Every decision and every transaction, as it happens.">
