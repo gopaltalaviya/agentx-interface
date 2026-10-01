@@ -120,14 +120,15 @@ for (const [label, path, pattern] of [
       return calls === 1 ? json(route, 500, {code: 'INTERNAL', detail: 'boom'}) : route.fallback();
     });
     await page.goto(path);
-    await expect(
-      page
-        .getByRole('alert')
-        .filter({hasText: /Could not|failed|boom/i})
-        .first(),
-    ).toBeVisible();
+    const alert = page
+      .getByRole('alert')
+      .filter({hasText: /The API had a problem \(500\)/})
+      .first();
+    await expect(alert).toBeVisible();
+    // The detail of a 5xx is written for an operator, not shown to a visitor.
+    await expect(alert).not.toContainText('boom');
     await page.getByRole('button', {name: /Retry/}).click();
-    await expect(page.getByRole('alert').filter({hasText: /Could not|boom/i})).toHaveCount(0);
+    await expect(page.getByRole('alert').filter({hasText: /had a problem/})).toHaveCount(0);
     expect(errors).toEqual([]);
   });
 }
@@ -339,4 +340,38 @@ test('the header fits a 320px phone on every main page (menu button reachable)',
     const menu = await page.getByRole('button', {name: /menu/i}).boundingBox();
     expect(menu!.x + menu!.width, `${path}: menu button off-screen`).toBeLessThanOrEqual(320);
   }
+});
+
+test('the status page tells a stopped indexer from one catching up', async ({page}) => {
+  const report = (indexer: 'down' | 'degraded', secondsSinceIndexed: number) => ({
+    status: 'degraded',
+    checkedAt: new Date().toISOString(),
+    build: null,
+    components: {api: 'up', database: 'up', signer: 'up', rpc: 'up', indexer},
+    chains: [
+      {
+        chainId: 10143,
+        name: 'Monad Testnet',
+        testnet: true,
+        rpc: 'up',
+        headBlock: 1_500,
+        indexer: {
+          status: indexer,
+          indexedBlock: 1_000,
+          lagBlocks: 500,
+          lastIndexedAt: null,
+          secondsSinceIndexed,
+        },
+      },
+    ],
+  });
+  let current = report('down', 300);
+  await page.route('**/v1/status', (route) => json(route, 200, current));
+  await page.goto('/status');
+  const row = page.getByRole('listitem').filter({hasText: 'Indexer'});
+  await expect(row).toContainText('Down');
+  await expect(row).toContainText('Stopped — no progress for 5 min');
+  current = report('degraded', 2);
+  await page.getByRole('button', {name: 'Refresh'}).click();
+  await expect(row).toContainText('Catching up — 500 blocks behind');
 });

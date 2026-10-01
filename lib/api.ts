@@ -132,11 +132,15 @@ export class ApiError extends Error {
 }
 
 /** Messages for the two failures that are not the API speaking. */
-export const UNREACHABLE =
-  'Cannot reach the AGENTX API — check your connection, or see the status page. Nothing was spent.';
+export const UNREACHABLE = 'Cannot reach the AGENTX API — check your connection, or see the status page.';
+export const UNAVAILABLE =
+  'AGENTX is temporarily unavailable — a service it depends on is down. Try again in a moment.';
 export const BAD_RESPONSE =
   'The API sent an unexpected answer (not a valid response) — often a proxy or a deploy in progress. Try again in a moment.';
 
+// These are shared by reads AND writes, so none of them claims "nothing was
+// spent": after a 5xx or a dropped connection on POST /v1/runs the site cannot
+// know that. Read-only pages say it themselves, where it is true.
 /**
  * Every request goes through here, so every failure reads the same way:
  * the API's own RFC 7807 problem when it sent one; otherwise one of two
@@ -160,9 +164,13 @@ async function request<T>(path: string, init: RequestInit, fallback: string): Pr
   }
   if (!res.ok) {
     const problem = (body ?? {}) as {code?: string; detail?: string};
-    if (!problem.code && !problem.detail && res.status >= 500)
+    // A 5xx is never the visitor's to fix, and its detail (if any) is written
+    // for an operator: say what it means for them instead.
+    if (res.status === 503 || problem.code === 'UPSTREAM_UNAVAILABLE')
+      throw new ApiError('UPSTREAM_UNAVAILABLE', UNAVAILABLE);
+    if (res.status >= 500)
       throw new ApiError(
-        'UPSTREAM_UNAVAILABLE',
+        problem.code ?? 'UPSTREAM_UNAVAILABLE',
         `The API had a problem (${res.status}). Try again in a moment.`,
       );
     throw new ApiError(problem.code ?? 'UNKNOWN', problem.detail ?? `${fallback} (${res.status})`);

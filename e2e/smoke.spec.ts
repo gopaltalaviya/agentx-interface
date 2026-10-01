@@ -144,7 +144,8 @@ test('the status page says what is degraded, in words', async ({page}) => {
   await expect(page.getByText('Partially degraded')).toBeVisible();
   const indexer = page.getByRole('listitem').filter({hasText: 'Indexer'});
   await expect(indexer.getByText('Degraded')).toBeVisible();
-  await expect(page.getByText('400 blocks')).toBeVisible();
+  await expect(indexer).toContainText('Catching up — 400 blocks behind');
+  await expect(page.getByText('400 blocks', {exact: true})).toBeVisible();
 });
 
 test('the menu works at phone width, and no page scrolls sideways', async ({page}) => {

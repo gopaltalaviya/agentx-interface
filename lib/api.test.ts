@@ -1,5 +1,5 @@
-import {describe, expect, it} from 'vitest';
-import {formatUnits} from './api';
+import {afterEach, describe, expect, it, vi} from 'vitest';
+import {api, ApiError, formatUnits} from './api';
 
 /**
  * `formatUnits` turns base units into something a person reads, and it is the
@@ -53,5 +53,49 @@ describe('formatUnits', () => {
 
   it('keeps the sign on a negative amount', () => {
     expect(formatUnits('-20000')).toBe('-0.02');
+  });
+});
+
+describe('how a failed request reads', () => {
+  const answer = (status: number, body: unknown) =>
+    vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        new Response(JSON.stringify(body), {status, headers: {'content-type': 'application/problem+json'}}),
+      );
+  afterEach(() => vi.restoreAllMocks());
+  const failure = (p: Promise<unknown>) =>
+    p.then(
+      () => {
+        throw new Error('expected the request to fail');
+      },
+      (e: unknown) => e as ApiError,
+    );
+
+  it('a 500 says the API had a problem — never a bare "/v1/agents?… failed (500)"', async () => {
+    answer(500, {type: 'x', title: 'Internal error', status: 500, code: 'INTERNAL', traceId: 't'});
+    const err = await failure(api.agents({limit: 5}));
+    expect(err.message).toMatch(/The API had a problem \(500\)/);
+    expect(err.message).not.toMatch(/\/v1\//);
+    expect(err.code).toBe('INTERNAL');
+  });
+
+  it('a dependency outage (503) says so in words, and promises nothing it cannot know', async () => {
+    answer(503, {
+      status: 503,
+      code: 'UPSTREAM_UNAVAILABLE',
+      detail: 'a service this request needs is unavailable',
+    });
+    const err = await failure(api.agents({limit: 5}));
+    expect(err.message).toMatch(/temporarily unavailable/i);
+    expect(err.message).toMatch(/try again/i);
+    // Shared with writes: after a failed POST the site cannot know nothing was spent.
+    expect(err.message).not.toMatch(/nothing was spent/i);
+  });
+
+  it('a 4xx keeps the API’s own explanation', async () => {
+    answer(422, {status: 422, code: 'SCHEMA_MISMATCH', detail: 'limit: Number must be at most 100'});
+    const err = await failure(api.agents({limit: 5}));
+    expect(err.message).toBe('limit: Number must be at most 100');
   });
 });

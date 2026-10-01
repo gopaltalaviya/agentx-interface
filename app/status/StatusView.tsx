@@ -74,6 +74,30 @@ const OVERALL: Record<StatusReport['status'], {tone: Tone; title: string; body: 
   },
 };
 
+/**
+ * One line on WHY a component is not up, where the report says. "Degraded"
+ * alone left an operator unable to tell "wait, it is catching up" from "go and
+ * restart it".
+ */
+function why(key: keyof StatusReport['components'], state: ComponentStatus, report: StatusReport) {
+  if (state === 'up' || state === 'unknown') return null;
+  if (key === 'indexer') {
+    const worst = report.chains.find((c) => c.indexer.status === state)?.indexer;
+    if (!worst) return null;
+    if (state === 'down') {
+      const mins =
+        worst.secondsSinceIndexed === null ? null : Math.max(1, Math.round(worst.secondsSinceIndexed / 60));
+      return `Stopped — no progress${mins === null ? '' : ` for ${mins} min`}, with blocks waiting to be indexed.`;
+    }
+    return worst.lagBlocks === null
+      ? null
+      : `Catching up — ${worst.lagBlocks.toLocaleString('en')} blocks behind, still moving.`;
+  }
+  if (key === 'rpc') return 'The chain is not answering us; on-chain actions will wait until it does.';
+  if (key === 'signer') return 'New hires and payments cannot be signed; browsing and records still work.';
+  return null;
+}
+
 export function StatusView() {
   const [report, setReport] = useState<StatusReport | null>(null);
   const [failure, setFailure] = useState<'unreachable' | 'unsupported' | null>(null);
@@ -246,6 +270,9 @@ export function StatusView() {
                         </Badge>
                       </div>
                       <p className="mt-1 text-xs leading-relaxed text-muted">{c.what}</p>
+                      {why(c.key, state, report) && (
+                        <p className="mt-1 text-xs font-medium text-text">{why(c.key, state, report)}</p>
+                      )}
                     </div>
                   </li>
                 );
