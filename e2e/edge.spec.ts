@@ -481,3 +481,26 @@ test('a live stream that drops and reconnects shows each line once, and only a r
     1,
   );
 });
+
+test('an orchestrator over its daily run cap is told so in words, and nothing starts', async ({page}) => {
+  await page.route('**/v1/runs', (route) =>
+    route.request().method() === 'POST'
+      ? route.fulfill({
+          status: 429,
+          contentType: 'application/problem+json',
+          headers: {'access-control-allow-origin': '*', 'retry-after': '3600'},
+          body: JSON.stringify({
+            status: 429,
+            code: 'RATE_LIMITED',
+            detail: 'this orchestrator has started 10 runs in the last 24 hours, its limit — try again later',
+          }),
+        })
+      : route.fallback(),
+  );
+  await page.goto('/demo');
+  await page.getByLabel('Orchestrator API key').fill(KEY);
+  await page.getByRole('button', {name: 'Run', exact: true}).click();
+  await expect(page.getByText(/10 runs in the last 24 hours, its limit/)).toBeVisible();
+  await expect(page.getByRole('list', {name: 'Run trace'})).toHaveCount(0);
+  await expect(page.getByRole('button', {name: 'Run', exact: true})).toBeEnabled();
+});
