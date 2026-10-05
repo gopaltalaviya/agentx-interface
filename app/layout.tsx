@@ -81,6 +81,15 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable}`}>
       <body className="flex min-h-screen flex-col bg-ink text-text">
+        {/* What is typed or pasted before the page hydrates. Hydration resets a
+            controlled input to its state, so a key pasted in the first second —
+            on a phone, or in Safari — vanished and Run stayed disabled. The
+            fields read this back on mount (components/ui/Field.tsx). */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){var e=window.__agentxEarly={};document.addEventListener('input',function(v){var t=v.target;if(t&&t.id&&typeof t.value==='string')e[t.id]=t.value},true)})();`,
+          }}
+        />
         <div aria-hidden className="ambient">
           <span className="orb orb-a" />
           <span className="orb orb-b" />

@@ -1,6 +1,29 @@
 'use client';
 
-import {useEffect, useId, useState, type ComponentProps, type ReactNode} from 'react';
+import {useEffect, useId, useState, type ChangeEvent, type ComponentProps, type ReactNode} from 'react';
+
+/**
+ * Adopt what was typed into this field before the page hydrated (recorded by
+ * the inline script in app/layout.tsx), then forget it. Only when the field is
+ * still empty: a value the page set itself always wins.
+ */
+function useEarlyInput<E extends HTMLInputElement | HTMLTextAreaElement>(
+  id: string | undefined,
+  value: unknown,
+  onChange: ((e: ChangeEvent<E>) => void) | undefined,
+) {
+  useEffect(() => {
+    const early = (window as unknown as {__agentxEarly?: Record<string, string>}).__agentxEarly;
+    if (!id || !early || !(id in early)) return;
+    const typed = early[id]!;
+    delete early[id];
+    if (typed && (value === '' || value === undefined) && onChange) {
+      onChange({target: {value: typed}, currentTarget: {value: typed}} as unknown as ChangeEvent<E>);
+    }
+    // Once, on mount: later typing goes through React as normal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+}
 import {Icon, type IconName} from './Icon';
 
 /**
@@ -72,6 +95,7 @@ export function TextInput({
   className = '',
   ...rest
 }: ComponentProps<'input'> & {icon?: IconName; actions?: ReactNode; invalid?: boolean; mono?: boolean}) {
+  useEarlyInput(rest.id, rest.value, rest.onChange);
   return (
     <div
       className={`${FRAME} ${invalid ? 'border-broken/60' : 'border-edge hover:border-edge-strong'} ${className}`}
@@ -88,6 +112,7 @@ export function TextInput({
 }
 
 export function TextArea({className = '', ...rest}: ComponentProps<'textarea'>) {
+  useEarlyInput(rest.id, rest.value, rest.onChange);
   return (
     <div className={`${FRAME} border-edge py-2 hover:border-edge-strong ${className}`}>
       <textarea

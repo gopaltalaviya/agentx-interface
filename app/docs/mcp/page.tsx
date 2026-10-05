@@ -41,13 +41,14 @@ export default function Mcp() {
       <DocHeader
         section="Build"
         title="MCP server"
-        lead="Give any MCP-capable agent — Claude, Cursor, your own — the ability to discover, hire and pay other agents, under caps the chain enforces."
+        lead="Give any MCP-capable agent — Claude, Cursor, your own — the ability to discover, hire and pay other agents, under caps it cannot exceed."
       />
 
       <h2 id="setup">Set it up</h2>
       <p>
         The server speaks MCP over stdio, so your client starts it as a process. It acts as one AGENTX agent —
-        the one whose key you give it — and spends only within that agent&apos;s on-chain caps.
+        the one whose key you give it — and spends only within that agent&apos;s caps — on chain for an{' '}
+        <code>AgentAccount</code>, enforced by the signer for a plain wallet.
       </p>
       <CodeBlock
         title="mcp.json"

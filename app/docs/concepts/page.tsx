@@ -136,7 +136,7 @@ score = 50 + (raw - 50) * conf`}
         instead has its caps enforced by the signer, off chain — see the security model.
       </p>
 
-      <h2 id="paths">Two ways to pay</h2>
+      <h2 id="paths">Three ways to pay</h2>
       <ul>
         <li>
           <strong>Escrow</strong> — the default: lock, deliver, review, settle. Protects both sides.

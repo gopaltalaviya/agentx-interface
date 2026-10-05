@@ -426,3 +426,58 @@ test('a run whose record is still being written when the stream ends still shows
   await expect(page.getByText('Thin liquidity — wait.')).toBeVisible({timeout: 10_000});
   expect(reads).toBeGreaterThanOrEqual(2);
 });
+
+test('a live stream that drops and reconnects shows each line once, and only a real ending ends the run', async ({
+  page,
+}) => {
+  // The server replays a run's whole history on every connection. Chrome
+  // reconnects by itself and every line used to appear twice; Firefox gave up
+  // instead, and the closed stream read as "finished".
+  let connections = 0;
+  await page.route('**/v1/runs', (route) =>
+    route.request().method() === 'POST'
+      ? json(route, 202, {runId: NEW_RUN, eventsUrl: `/v1/runs/${NEW_RUN}/events`})
+      : route.fallback(),
+  );
+  const planned = 'event: planned\ndata: {"subtasks":1,"reasoning":"one step"}\n\n';
+  await page.route(`**/v1/runs/${NEW_RUN}/events`, (route) => {
+    connections++;
+    return route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      headers: {'access-control-allow-origin': '*'},
+      // First connection: history so far, then the connection ends. Second: the
+      // replayed history and the end of the run.
+      body:
+        connections === 1
+          ? `retry: 300\n\n${planned}`
+          : `${planned}event: finished\ndata: {"spent":"20000"}\n\n`,
+    });
+  });
+  await page.route(`**/v1/runs/${NEW_RUN}`, (route) =>
+    json(route, 200, {
+      runId: NEW_RUN,
+      chainId: 10143,
+      network: 'Monad Testnet',
+      testnet: true,
+      goal: 'g',
+      state: 'done',
+      spent: '20000',
+      spentDisplay: '0.02 USDC',
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      answer: 'Done after a reconnect.',
+      error: null,
+      steps: [],
+      events: [],
+    }),
+  );
+  await page.goto('/demo');
+  await page.getByLabel('Orchestrator API key').fill(KEY);
+  await page.getByRole('button', {name: 'Run', exact: true}).click();
+  await expect(page.getByText('Done after a reconnect.')).toBeVisible({timeout: 20_000});
+  expect(connections).toBeGreaterThanOrEqual(2);
+  await expect(page.getByRole('list', {name: 'Run trace'}).getByText('planned', {exact: true})).toHaveCount(
+    1,
+  );
+});

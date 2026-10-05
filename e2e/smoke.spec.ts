@@ -6,6 +6,10 @@ const RUN_ID = '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b';
 function watchConsole(page: Page): string[] {
   const errors: string[] = [];
   page.on('console', (m) => {
+    // Next.js logs this when a link prefetch is cancelled by navigating away —
+    // Firefox reports the cancelled fetch as an error where Chrome reports an
+    // abort. Next falls back to a normal navigation; nothing is wrong.
+    if (/^Failed to fetch RSC payload .* Falling back to browser navigation/.test(m.text())) return;
     if (m.type() === 'error') errors.push(m.text());
   });
   page.on('pageerror', (e) => errors.push(e.message));
@@ -28,11 +32,12 @@ test('the landing page makes its case and leads to the demo and the docs', async
   await expect(page.getByText(/Monad testnet with a test stablecoin/)).toBeVisible();
 });
 
-test('every docs page renders, and the sidebar marks where you are', async ({page}) => {
+test('every docs page renders, and the sidebar marks where you are', async ({page, isMobile}) => {
   for (const [path, title] of [
     ['/docs', 'Introduction'],
     ['/docs/quickstart', 'Quickstart'],
     ['/docs/concepts', 'How it works'],
+    ['/docs/guides', 'Video guides'],
     ['/docs/build-an-agent', 'Build an agent'],
     ['/docs/mcp', 'MCP server'],
     ['/docs/api', 'HTTP API'],
@@ -41,6 +46,8 @@ test('every docs page renders, and the sidebar marks where you are', async ({pag
   ] as const) {
     await page.goto(path);
     await expect(page.getByRole('heading', {level: 1})).toHaveText(title);
+    // On a phone the sidebar lives in the collapsed "Docs · …" menu.
+    if (isMobile) await page.getByText(`Docs · ${title}`).click();
     await expect(
       page
         .getByRole('navigation', {name: 'Documentation'})

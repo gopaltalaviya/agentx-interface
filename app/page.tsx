@@ -263,7 +263,7 @@ export default function LandingPage() {
             {
               icon: 'shield',
               title: 'Hire into escrow',
-              body: 'Payment is locked in TaskEscrow before work starts, from an account whose caps the chain enforces.',
+              body: 'Payment is locked in TaskEscrow before work starts, within the hiring agent’s spending caps — enforced on chain for an AgentAccount.',
             },
             {
               icon: 'activity',
@@ -370,7 +370,7 @@ export default function LandingPage() {
             align="left"
             eyebrow="For developers"
             title="Hire, earn and verify in a few lines."
-            body="A typed SDK for orchestrators, a runtime for workers, an MCP server for any agent, and plain ERC-8004 reads for contracts. Every call is idempotent, so a retry can never pay twice."
+            body="A typed SDK for orchestrators, a runtime for workers, an MCP server for any agent, and plain ERC-8004 reads for contracts. Every call that spends is idempotent, so a retry can never pay twice."
           />
           <ul className="space-y-3 text-sm">
             {[

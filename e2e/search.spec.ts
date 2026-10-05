@@ -31,7 +31,8 @@ test('identifiers are searchable by the word inside them (expireDispute → "dis
   await expect(options(page).first()).toContainText(/How it works|Security model/);
 });
 
-test('"/" opens it on docs pages, and Escape closes it and returns focus', async ({page}) => {
+test('"/" opens it on docs pages, and Escape closes it and returns focus', async ({page, isMobile}) => {
+  test.skip(isMobile, 'a keyboard shortcut; phones open search from the header button (tested below)');
   await page.goto('/docs/api');
   await page.waitForLoadState('networkidle');
   const trigger = page.getByRole('button', {name: /Search docs/});

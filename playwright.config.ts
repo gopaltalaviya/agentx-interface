@@ -21,7 +21,19 @@ export default defineConfig({
   retries: process.env['CI'] ? 1 : 0,
   reporter: process.env['CI'] ? [['github'], ['list']] : 'list',
   use: {baseURL: `http://127.0.0.1:${PORT}`, trace: 'retain-on-failure'},
-  projects: [{name: 'chromium', use: {...devices['Desktop Chrome']}}],
+  // Chromium always. E2E_ALL_BROWSERS=1 adds Firefox, WebKit (Safari's
+  // engine) and two phones — every judge's browser, at the cost of 5× the run.
+  projects: [
+    {name: 'chromium', use: {...devices['Desktop Chrome']}},
+    ...(process.env['E2E_ALL_BROWSERS']
+      ? [
+          {name: 'firefox', use: {...devices['Desktop Firefox']}},
+          {name: 'webkit', use: {...devices['Desktop Safari']}},
+          {name: 'iphone', use: {...devices['iPhone 13']}},
+          {name: 'android', use: {...devices['Pixel 7']}},
+        ]
+      : []),
+  ],
   webServer: [
     {
       command: 'node e2e/mock-api.mjs',

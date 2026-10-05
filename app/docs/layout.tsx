@@ -1,5 +1,6 @@
 import type {Metadata} from 'next';
 import {DocsMobileNav, DocsPager, DocsSidebar} from '@/components/docs/DocsNav';
+import {ScrollableTables} from '@/components/docs/ScrollableTables';
 
 export const metadata: Metadata = {
   title: {default: 'Documentation', template: '%s · AGENTX docs'},
@@ -21,6 +22,7 @@ export default function DocsLayout({children}: {children: React.ReactNode}) {
           {children}
           <DocsPager />
         </article>
+        <ScrollableTables />
       </div>
     </div>
   );

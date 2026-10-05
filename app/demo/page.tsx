@@ -170,6 +170,8 @@ export default function DemoPage() {
           })();
         },
         setStream,
+        // A reconnect replays the whole history: start the trace over.
+        () => setEvents([]),
       );
     } catch (err) {
       setError(

@@ -9,11 +9,14 @@ import {subscribeToRun, type RunEvent} from './api';
 class FakeEventSource {
   static CLOSED = 2;
   static last: FakeEventSource | null = null;
+  static all: FakeEventSource[] = [];
   readyState = 1;
   onerror: (() => void) | null = null;
+  onopen: (() => void) | null = null;
   private listeners = new Map<string, ((e: {data: string}) => void)[]>();
   constructor(readonly url: string) {
     FakeEventSource.last = this;
+    FakeEventSource.all.push(this);
   }
   addEventListener(kind: string, fn: (e: {data: string}) => void) {
     this.listeners.set(kind, [...(this.listeners.get(kind) ?? []), fn]);
@@ -28,15 +31,25 @@ class FakeEventSource {
 
 afterEach(() => {
   FakeEventSource.last = null;
+  FakeEventSource.all = [];
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 function subscribe() {
   vi.stubGlobal('EventSource', FakeEventSource);
   const events: RunEvent[] = [];
   const onClose = vi.fn();
-  const stop = subscribeToRun('3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b', (e) => events.push(e), onClose);
-  return {events, onClose, stop, source: FakeEventSource.last!};
+  const onConnection = vi.fn();
+  const onReplay = vi.fn();
+  const stop = subscribeToRun(
+    '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b',
+    (e) => events.push(e),
+    onClose,
+    onConnection,
+    onReplay,
+  );
+  return {events, onClose, onConnection, onReplay, stop, source: FakeEventSource.last!};
 }
 
 describe('subscribeToRun', () => {
@@ -74,13 +87,54 @@ describe('subscribeToRun', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('treats a transient error as retryable and a closed source as the end', () => {
-    const {source, onClose} = subscribe();
+  it('treats a transient error as retryable, and never treats a dropped stream as the end', () => {
+    const {source, onClose, onConnection} = subscribe();
     source.onerror?.();
     expect(onClose).not.toHaveBeenCalled();
+    expect(onConnection).toHaveBeenLastCalledWith('reconnecting');
+    // Firefox gives up on a reset connection (CLOSED) where Chrome retries.
+    // That used to read as "finished": an unfinished run looked done.
     source.readyState = FakeEventSource.CLOSED;
     source.onerror?.();
-    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('reconnects by itself when the browser gives up, and says when it is lost', () => {
+    vi.useFakeTimers();
+    const {source, onConnection} = subscribe();
+    for (let i = 0; i < 3; i++) {
+      FakeEventSource.last!.readyState = FakeEventSource.CLOSED;
+      FakeEventSource.last!.onerror?.();
+      vi.advanceTimersByTime(20_000);
+    }
+    expect(FakeEventSource.all.length).toBeGreaterThanOrEqual(3);
+    expect(FakeEventSource.last).not.toBe(source);
+    expect(onConnection).toHaveBeenCalledWith('lost');
+    FakeEventSource.last!.onopen?.();
+    expect(onConnection).toHaveBeenLastCalledWith('open');
+  });
+
+  it('a reconnect replays the history, so the page is told to start the trace over', () => {
+    // The server sends every past event on each connection (no ids), so
+    // without this every line appeared twice after a reconnect.
+    const {source, onReplay, events} = subscribe();
+    source.onopen?.();
+    source.emit('planned', JSON.stringify({subtasks: 1}));
+    expect(onReplay).not.toHaveBeenCalled(); // the first connection is not a replay
+    source.onerror?.();
+    source.onopen?.(); // the browser reconnected
+    expect(onReplay).toHaveBeenCalledTimes(1);
+    expect(events.map((e) => e.kind)).toEqual(['planned']);
+  });
+
+  it('stops reconnecting once unsubscribed', () => {
+    vi.useFakeTimers();
+    const {source, stop} = subscribe();
+    source.readyState = FakeEventSource.CLOSED;
+    source.onerror?.();
+    stop();
+    vi.advanceTimersByTime(60_000);
+    expect(FakeEventSource.all).toHaveLength(1);
   });
 
   it('unsubscribes by closing the stream', () => {

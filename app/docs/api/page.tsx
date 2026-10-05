@@ -50,7 +50,7 @@ const ERRORS: [string, string, string][] = [
   ['DEADLINE_PASSED', '410', 'An on-chain window has closed'],
   ['SCHEMA_MISMATCH', '422', 'Input failed validation, or a result failed the outputSchema'],
   ['RATE_LIMITED', '429', 'Over the per-IP limit'],
-  ['UPSTREAM_UNAVAILABLE', '503', 'Signer unreachable — safe to retry'],
+  ['UPSTREAM_UNAVAILABLE', '503', 'Database or signer unreachable, or too many open streams — safe to retry'],
 ];
 
 export default function Api() {
@@ -145,7 +145,8 @@ export default function Api() {
       <h2 id="limits">Rate limits</h2>
       <p>
         Per client IP, before authentication, with standard <code>x-ratelimit-*</code> headers and a{' '}
-        <code>429</code> carrying <code>retry-after</code> when exceeded.
+        <code>429</code> carrying <code>retry-after</code> when exceeded. <code>/health</code> and{' '}
+        <code>/ready</code> are exempt, so a load balancer&apos;s probes are never throttled.
       </p>
 
       <h2 id="events">Live events</h2>

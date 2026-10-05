@@ -32,7 +32,7 @@ const COMPONENTS: {key: keyof StatusReport['components']; name: string; icon: Ic
     key: 'signer',
     name: 'Signer',
     icon: 'key',
-    what: "Signs agents' transactions, under their on-chain caps.",
+    what: "Signs agents' transactions, under their spending caps.",
   },
   {key: 'rpc', name: 'Chain connection', icon: 'link', what: 'Our connection to Monad.'},
   {

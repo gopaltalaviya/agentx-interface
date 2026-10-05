@@ -319,11 +319,17 @@ export function subscribeToRun(
   /**
    * Connection state, so a dropped stream is said rather than looking like a
    * run that never ends: `reconnecting` after an error, `lost` after three in
-   * a row (the browser keeps retrying; `open` again if it gets back).
+   * a row (it keeps retrying; `open` again when it gets back).
    */
   onConnection?: (state: StreamState) => void,
+  /**
+   * The server replays a run's whole history on every connection (its events
+   * carry no ids). Called when a RE-connection opens, before that replay, so
+   * the page starts its trace over instead of showing every line twice.
+   */
+  onReplay?: () => void,
 ): () => void {
-  const source = new EventSource(`${API_URL}/v1/runs/${encodeURIComponent(runId)}/events`);
+  const url = `${API_URL}/v1/runs/${encodeURIComponent(runId)}/events`;
 
   // Every kind the page renders. A kind missing here is not an error — it is
   // silence: an SSE event with no listener is dropped by the browser.
@@ -342,37 +348,60 @@ export function subscribeToRun(
     'failed',
   ];
 
-  for (const kind of KINDS) {
-    source.addEventListener(kind, (e) => {
-      try {
-        onEvent({kind, payload: JSON.parse((e as MessageEvent).data), at: Date.now()});
-      } catch {
-        // A malformed frame must not kill the stream; the run is still real
-        // and the next event will render.
-      }
-      if (kind === 'finished' || kind === 'failed') {
-        source.close();
-        onClose?.();
-      }
-    });
-  }
-
+  let source: EventSource;
+  let ended = false; // a terminal event arrived: the run is over
+  let stopped = false; // the page unsubscribed
   let failures = 0;
-  source.onopen = () => {
-    failures = 0;
-    onConnection?.('open');
-  };
-  source.onerror = () => {
-    // EventSource retries on its own. Only a closed source is terminal.
-    if (source.readyState === EventSource.CLOSED) {
-      onClose?.();
-      return;
-    }
-    failures += 1;
-    onConnection?.(failures >= 3 ? 'lost' : 'reconnecting');
-  };
+  let opened = 0;
+  let retry: ReturnType<typeof setTimeout> | undefined;
 
-  return () => source.close();
+  const connect = () => {
+    source = new EventSource(url);
+    for (const kind of KINDS) {
+      source.addEventListener(kind, (e) => {
+        try {
+          onEvent({kind, payload: JSON.parse((e as MessageEvent).data), at: Date.now()});
+        } catch {
+          // A malformed frame must not kill the stream; the run is still real
+          // and the next event will render.
+        }
+        if ((kind === 'finished' || kind === 'failed') && !ended) {
+          ended = true;
+          source.close();
+          onClose?.();
+        }
+      });
+    }
+    source.onopen = () => {
+      failures = 0;
+      opened += 1;
+      if (opened > 1) onReplay?.();
+      onConnection?.('open');
+    };
+    source.onerror = () => {
+      if (ended || stopped) return;
+      failures += 1;
+      onConnection?.(failures >= 3 ? 'lost' : 'reconnecting');
+      // Only a terminal EVENT ends a run. A closed source is the browser giving
+      // up — Firefox does on a reset connection where Chrome retries — and it
+      // used to read as "finished". Retry ourselves, backing off to 15 s.
+      if (source.readyState === EventSource.CLOSED) {
+        retry = setTimeout(
+          () => {
+            if (!stopped && !ended) connect();
+          },
+          Math.min(3_000 * failures, 15_000),
+        );
+      }
+    };
+  };
+  connect();
+
+  return () => {
+    stopped = true;
+    clearTimeout(retry);
+    source.close();
+  };
 }
 
 /** `20000` → `0.02`, without floats: the string is the source of truth. */
