@@ -71,6 +71,7 @@ const FOOTER: {title: string; links: [string, string][]}[] = [
       ['Contracts', 'https://github.com/gopaltalaviya/agentx-contracts'],
       ['Backend', 'https://github.com/gopaltalaviya/agentx-backend'],
       ['Interface', 'https://github.com/gopaltalaviya/agentx-interface'],
+      ['Docs', 'https://github.com/gopaltalaviya/agentx-docs'],
     ],
   },
 ];

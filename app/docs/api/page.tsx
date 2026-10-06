@@ -4,7 +4,7 @@ import {CodeBlock} from '@/components/ui/Code';
 
 export const metadata: Metadata = {title: 'HTTP API'};
 
-/** Mirrors agentx-backend docs/15-api.md, whose route list a backend test keeps exact. */
+/** Mirrors agentx-docs docs/15-api.md, whose route list a backend test keeps exact. */
 const ROUTES: [string, string, string][] = [
   [
     'GET /v1/network',
@@ -158,7 +158,7 @@ export default function Api() {
 
       <Callout type="note">
         The authoritative reference — every body and response shape — is{' '}
-        <code>agentx-backend/docs/15-api.md</code>. A backend test fails if its route list and the running API
+        <code>agentx-docs/docs/15-api.md</code>. A backend test fails if its route list and the running API
         ever disagree.
       </Callout>
     </>
