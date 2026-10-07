@@ -88,7 +88,14 @@ export interface RunDetail extends RunSummary {
 export interface RunStep {
   capability: string;
   status:
-    'settled' | 'disputed' | 'unrecoverable' | 'no-candidate' | 'budget-exceeded' | 'timeout' | 'failed';
+    | 'settled'
+    | 'disputed'
+    | 'unrecoverable'
+    | 'no-candidate'
+    | 'budget-exceeded'
+    | 'declined'
+    | 'timeout'
+    | 'failed';
   /** Set when a second worker delivered: why the first did not. */
   retriedAfter?: string;
   detail: string;

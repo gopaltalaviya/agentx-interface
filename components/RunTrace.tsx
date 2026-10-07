@@ -96,7 +96,7 @@ export function RunTrace({
             <span
               className={`w-20 shrink-0 text-xs font-medium sm:pt-0.5 ${TONE[event.kind] ?? 'text-muted'}`}
             >
-              {event.kind}
+              {LABEL[event.kind] ?? event.kind}
             </span>
             <span className="min-w-0 flex-1 break-words leading-relaxed">
               <Line event={event} token={token ?? null} />
@@ -107,6 +107,9 @@ export function RunTrace({
     </ol>
   );
 }
+
+/** Event kinds are words already, bar one. */
+const LABEL: Record<string, string> = {'plan-failed': 'no plan'};
 
 /** The dot on the rail carries the same meaning as the label beside it. */
 const DOT: Record<string, string> = {

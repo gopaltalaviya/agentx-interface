@@ -71,6 +71,8 @@ const GUIDE: {icon: IconName; title: string; body: string; link?: {href: string;
 
 /** Where a run is, derived from what has actually happened — never a timer. */
 const PHASES = ['Planning', 'Hiring', 'Judging', 'Settling', 'Done'] as const;
+/** The last phase's name when the run ended without delivering. */
+const FAILED_PHASE = 'Failed';
 function phaseOf(events: RunEvent[], finished: boolean): number {
   if (finished) return 4;
   const kinds = new Set(events.map((e) => e.kind));
@@ -199,6 +201,13 @@ export default function DemoPage() {
   const hires = events.filter((e) => e.kind === 'hired').length;
   const settlements = events.filter((e) => e.kind === 'settled').length;
   const phase = phaseOf(events, finished);
+  // Ended without delivering: the record says `failed`, or the stream's own
+  // terminal event did. Either way it is not a green "finished".
+  const failedEvent = events.find((e) => e.kind === 'failed');
+  const failed = detail?.state === 'failed' || failedEvent !== undefined;
+  const failure =
+    detail?.error ??
+    (typeof failedEvent?.payload['detail'] === 'string' ? failedEvent.payload['detail'] : null);
 
   const proven = agents?.filter((a) => a.completed + a.failed > 0).length ?? 0;
   const settledJobs = agents?.reduce((sum, a) => sum + a.completed, 0) ?? 0;
@@ -389,12 +398,19 @@ export default function DemoPage() {
                   <Badge tone="live" dot>
                     live
                   </Badge>
+                ) : finished && failed ? (
+                  <Badge tone="broken">failed</Badge>
                 ) : finished ? (
                   <Badge tone="settled">finished</Badge>
                 ) : null}
               </span>
             </div>
-            <Progress phase={phase} running={running} />
+            <Progress phase={phase} running={running} failed={failed} />
+            {finished && failed && (
+              <ErrorState title="The run did not deliver">
+                {failure ?? 'No agent delivered a result. The steps below say why.'}
+              </ErrorState>
+            )}
             {running && stream === 'lost' && (
               <div
                 role="alert"
@@ -538,10 +554,12 @@ function Fact({label, value, hint}: {label: string; value: string; hint: string}
 }
 
 /** Planning → Hiring → Judging → Settling → Done, lit up as it happens. */
-function Progress({phase, running}: {phase: number; running: boolean}) {
+function Progress({phase, running, failed}: {phase: number; running: boolean; failed: boolean}) {
   return (
     <ol aria-label="Run progress" className="grid grid-cols-5 gap-2">
-      {PHASES.map((name, i) => {
+      {PHASES.map((phaseName, i) => {
+        const last = i === PHASES.length - 1;
+        const name = failed && last ? FAILED_PHASE : phaseName;
         const done = i < phase || (!running && i === phase);
         const current = running && i === phase;
         return (
@@ -550,7 +568,13 @@ function Progress({phase, running}: {phase: number; running: boolean}) {
               <span
                 className={
                   'block h-full rounded-full transition-[width,background-color] duration-500 ' +
-                  (done ? 'w-full bg-settled' : current ? 'w-1/2 bg-accent' : 'w-0')
+                  (done && failed && last
+                    ? 'w-full bg-broken'
+                    : done
+                      ? 'w-full bg-settled'
+                      : current
+                        ? 'w-1/2 bg-accent'
+                        : 'w-0')
                 }
               />
             </span>

@@ -261,15 +261,18 @@ test('volume: 100 agents and a 500-event trace render', async ({page}) => {
 });
 
 test('every way a step can end is named in words', async ({page}) => {
-  const statuses = [
-    'settled',
-    'disputed',
-    'unrecoverable',
-    'no-candidate',
-    'budget-exceeded',
-    'timeout',
-    'failed',
-  ];
+  // A status code is not a word: each one has a label a judge can read.
+  const labels: Record<string, string> = {
+    settled: 'Settled',
+    disputed: 'Disputed',
+    unrecoverable: 'Judged bad, already paid',
+    'no-candidate': 'No agent available',
+    'budget-exceeded': 'Over budget',
+    declined: 'Declined by the agent',
+    timeout: 'Timed out',
+    failed: 'Failed',
+  };
+  const statuses = Object.keys(labels);
   await page.route(`**/v1/runs/${RUN_ID}`, (route) =>
     json(route, 200, {
       runId: RUN_ID,
@@ -291,7 +294,10 @@ test('every way a step can end is named in words', async ({page}) => {
     }),
   );
   await page.goto(`/runs/${RUN_ID}`);
-  for (const s of statuses) await expect(page.getByText(s, {exact: true}).first()).toBeVisible();
+  for (const s of statuses) {
+    await expect(page.getByText(labels[s]!, {exact: true}).first()).toBeVisible();
+    await expect(page.getByText(`why ${s}`)).toBeVisible();
+  }
   await expect(page.getByText('The run failed')).toBeVisible();
   await expect(page.getByText(/no plan — model unreachable/)).toBeVisible();
 });
@@ -425,6 +431,69 @@ test('a run whose record is still being written when the stream ends still shows
   await page.getByRole('button', {name: 'Run', exact: true}).click();
   await expect(page.getByText('Thin liquidity — wait.')).toBeVisible({timeout: 10_000});
   expect(reads).toBeGreaterThanOrEqual(2);
+});
+
+test('a run that delivered nothing says so on the demo page, with the reason — never a green "finished"', async ({
+  page,
+}) => {
+  // It used to end `done` with no error, so the page showed a green badge and
+  // a full progress bar for a run where no agent delivered anything.
+  const reason =
+    'No agent delivered. market-research: agent 2 declined: needs a private wallet export — cancelled and refunded.';
+  await page.route('**/v1/runs', (route) =>
+    route.request().method() === 'POST'
+      ? json(route, 202, {runId: NEW_RUN, eventsUrl: `/v1/runs/${NEW_RUN}/events`})
+      : route.fallback(),
+  );
+  await page.route(`**/v1/runs/${NEW_RUN}/events`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      headers: {'access-control-allow-origin': '*'},
+      body: `event: failed
+data: ${JSON.stringify({detail: reason, spent: '0'})}
+
+`,
+    }),
+  );
+  await page.route(`**/v1/runs/${NEW_RUN}`, (route) =>
+    json(route, 200, {
+      runId: NEW_RUN,
+      chainId: 10143,
+      network: 'Monad Testnet',
+      testnet: true,
+      goal: 'g',
+      state: 'failed',
+      spent: '0',
+      spentDisplay: '0 USDC',
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      answer: null,
+      error: reason,
+      steps: [
+        {
+          capability: 'market-research',
+          status: 'declined',
+          detail: 'agent 2 declined: needs a private wallet export — cancelled and refunded',
+        },
+      ],
+      events: [],
+    }),
+  );
+  await page.goto('/demo');
+  await page.getByLabel('Orchestrator API key').fill(KEY);
+  await page.getByRole('button', {name: 'Run', exact: true}).click();
+
+  await expect(page.getByText('The run did not deliver')).toBeVisible({timeout: 10_000});
+  await expect(page.getByRole('alert').filter({hasText: 'The run did not deliver'})).toContainText(
+    'needs a private wallet export',
+  );
+  await expect(page.getByRole('status').getByText('failed', {exact: true})).toBeVisible();
+  await expect(page.getByRole('status').getByText('finished', {exact: true})).toHaveCount(0);
+  await expect(page.getByText('Declined by the agent', {exact: true})).toBeVisible();
+  await expect(
+    page.getByRole('list', {name: 'Run progress'}).getByText('Failed', {exact: true}),
+  ).toBeVisible();
 });
 
 test('a live stream that drops and reconnects shows each line once, and only a real ending ends the run', async ({

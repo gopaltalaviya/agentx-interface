@@ -11,14 +11,16 @@ import {Icon, type IconName} from './ui/Icon';
  * the same in both places.
  */
 
-const OUTCOME: Record<RunStep['status'], {tone: Tone; icon: IconName}> = {
-  settled: {tone: 'settled', icon: 'check'},
-  disputed: {tone: 'refused', icon: 'alert'},
-  unrecoverable: {tone: 'refused', icon: 'alert'},
-  'no-candidate': {tone: 'refused', icon: 'users'},
-  'budget-exceeded': {tone: 'refused', icon: 'coins'},
-  timeout: {tone: 'broken', icon: 'x'},
-  failed: {tone: 'broken', icon: 'x'},
+/** Each ending in words, colour and icon. The API's status codes are not words. */
+export const OUTCOME: Record<RunStep['status'], {label: string; tone: Tone; icon: IconName}> = {
+  settled: {label: 'Settled', tone: 'settled', icon: 'check'},
+  disputed: {label: 'Disputed', tone: 'refused', icon: 'alert'},
+  unrecoverable: {label: 'Judged bad, already paid', tone: 'refused', icon: 'alert'},
+  'no-candidate': {label: 'No agent available', tone: 'refused', icon: 'users'},
+  'budget-exceeded': {label: 'Over budget', tone: 'refused', icon: 'coins'},
+  declined: {label: 'Declined by the agent', tone: 'refused', icon: 'x'},
+  timeout: {label: 'Timed out', tone: 'broken', icon: 'x'},
+  failed: {label: 'Failed', tone: 'broken', icon: 'x'},
 };
 
 const RING: Record<Tone, string> = {
@@ -34,7 +36,11 @@ export function StepList({steps}: {steps: RunStep[]}) {
   return (
     <ol className="stagger space-y-0">
       {steps.map((step, i) => {
-        const outcome = OUTCOME[step.status] ?? {tone: 'neutral' as Tone, icon: 'activity' as IconName};
+        const outcome = OUTCOME[step.status] ?? {
+          label: String(step.status),
+          tone: 'neutral' as Tone,
+          icon: 'activity' as IconName,
+        };
         const href = safeHref(step.explorerUrl);
         const last = i === steps.length - 1;
         return (
@@ -53,7 +59,7 @@ export function StepList({steps}: {steps: RunStep[]}) {
             <div className="min-w-0 flex-1 pt-1">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="text-sm font-medium">{step.capability}</span>
-                <Badge tone={outcome.tone}>{step.status}</Badge>
+                <Badge tone={outcome.tone}>{outcome.label}</Badge>
                 {href && (
                   <a
                     href={href}
