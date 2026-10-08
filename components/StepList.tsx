@@ -1,5 +1,6 @@
 import type {RunStep} from '@/lib/api';
 import {safeHref} from '@/lib/links';
+import {ReviewProof} from './ReviewProof';
 import {Badge, type Tone} from './ui/Badge';
 import {Icon, type IconName} from './ui/Icon';
 
@@ -32,7 +33,12 @@ const RING: Record<Tone, string> = {
   chain: 'border-chain/40 bg-chain/10 text-chain',
 };
 
-export function StepList({steps}: {steps: RunStep[]}) {
+/**
+ * `proof` adds, under each settled step, the on-chain review it wrote and the
+ * worker's score now. The run record sets it; the live demo, whose steps are
+ * seconds old and may not be indexed yet, does not.
+ */
+export function StepList({steps, proof = false}: {steps: RunStep[]; proof?: boolean}) {
   return (
     <ol className="stagger space-y-0">
       {steps.map((step, i) => {
@@ -72,6 +78,9 @@ export function StepList({steps}: {steps: RunStep[]}) {
                 )}
               </div>
               <p className="mt-1.5 text-sm leading-relaxed text-muted">{step.detail}</p>
+              {proof && step.status === 'settled' && step.jobId && step.agentId !== undefined && (
+                <ReviewProof jobId={step.jobId} agentId={step.agentId} />
+              )}
               {step.retriedAfter && (
                 <p className="mt-1.5 flex items-start gap-1.5 text-xs text-refused">
                   <Icon name="refresh" className="mt-px size-3.5" />

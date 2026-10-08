@@ -302,6 +302,50 @@ test('every way a step can end is named in words', async ({page}) => {
   await expect(page.getByText(/no plan — model unreachable/)).toBeVisible();
 });
 
+test('a refused review is said plainly, and an unsettled step claims none', async ({page}) => {
+  const JOB_A = '11111111-1111-4111-8111-111111111111';
+  const JOB_B = '22222222-2222-4222-8222-222222222222';
+  await page.route(`**/v1/runs/${RUN_ID}`, (route) =>
+    json(route, 200, {
+      runId: RUN_ID,
+      chainId: 10143,
+      network: 'Monad Testnet',
+      testnet: true,
+      goal: 'Two steps',
+      state: 'done',
+      spent: '20000',
+      spentDisplay: '0.02 USDC',
+      startedAt: '2026-09-30T12:00:00Z',
+      finishedAt: '2026-09-30T12:01:00Z',
+      answer: 'ok',
+      error: null,
+      steps: [
+        {capability: 'market-research', status: 'settled', detail: 'paid', jobId: JOB_A, agentId: 1},
+        {capability: 'trade-analysis', status: 'disputed', detail: 'rejected', jobId: JOB_B, agentId: 2},
+      ],
+      events: [],
+    }),
+  );
+  await page.route(`**/v1/jobs/${JOB_A}`, (route) =>
+    json(route, 200, {
+      events: [
+        {kind: 'settled', explorerUrl: 'https://testnet.monadexplorer.com/tx/0x1'},
+        {kind: 'feedback_failed', explorerUrl: 'https://testnet.monadexplorer.com/tx/0x1'},
+      ],
+    }),
+  );
+  let disputedJobRead = false;
+  await page.route(`**/v1/jobs/${JOB_B}`, (route) => {
+    disputedJobRead = true;
+    return json(route, 200, {events: [{kind: 'disputed', explorerUrl: null}]});
+  });
+  await page.route('**/v1/agents/1', (route) => json(route, 200, agent(1)));
+  await page.goto(`/runs/${RUN_ID}`);
+  await expect(page.getByText(/reputation registry refused the review/)).toBeVisible();
+  await expect(page.getByText(/Review written on chain/)).toHaveCount(0);
+  expect(disputedJobRead).toBe(false);
+});
+
 // ── The live stream failing ────────────────────────────────────────────────
 
 test('worst case: the live stream drops mid-run — the page says so and links the record', async ({page}) => {

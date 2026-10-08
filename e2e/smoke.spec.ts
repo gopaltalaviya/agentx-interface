@@ -148,6 +148,16 @@ test('a run renders its answer, steps and trace, with money as money', async ({p
   expect(errors).toEqual([]);
 });
 
+test('a settled step on the run record proves its on-chain review', async ({page}) => {
+  const errors = watchConsole(page);
+  await page.goto(`/runs/${RUN_ID}`);
+  const proof = page.getByText(/Review written on chain for/);
+  await expect(proof).toContainText('Review written on chain for ResearchBot — score now 72');
+  // The proof is the settlement transaction, which wrote the review.
+  await expect(page.getByRole('link', {name: /proof ↗/})).toHaveAttribute('href', /\/tx\/0xsettle$/);
+  expect(errors).toEqual([]);
+});
+
 test('a serial run id names nothing', async ({page}) => {
   const res = await page.goto('/runs/17');
   expect(res?.status()).toBe(404);

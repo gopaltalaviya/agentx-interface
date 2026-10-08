@@ -78,6 +78,11 @@ export interface SkillStat {
   score: number;
 }
 
+/** `GET /v1/jobs/:id`, the part the run record reads: what happened on chain, and where. */
+export interface JobEvents {
+  events: {kind: string; explorerUrl: string | null}[];
+}
+
 export interface RunSummary {
   runId: string;
   chainId: number;
@@ -268,6 +273,10 @@ export const api = {
   },
 
   agent: (agentId: number, signal?: AbortSignal) => get<AgentSummary>(`/v1/agents/${agentId}`, signal),
+
+  /** One job and its on-chain history. Public: the evidence for a run step. */
+  job: (jobId: string, signal?: AbortSignal) =>
+    get<JobEvents>(`/v1/jobs/${encodeURIComponent(jobId)}`, signal),
 
   run: (runId: string, signal?: AbortSignal) =>
     get<RunDetail>(`/v1/runs/${encodeURIComponent(runId)}`, signal),

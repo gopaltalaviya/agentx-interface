@@ -179,7 +179,7 @@ export function RunView({runId}: {runId: string}) {
           title="Steps"
           description="What was commissioned, how it ended, and the transaction that proves it."
         >
-          <StepList steps={run.steps} />
+          <StepList steps={run.steps} proof />
         </Card>
       )}
 

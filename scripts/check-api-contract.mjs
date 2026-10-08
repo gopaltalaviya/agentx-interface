@@ -19,6 +19,8 @@ import https from 'node:https';
 
 const API = (process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8080').replace(/\/$/, '');
 
+const SKILL = ['capability', 'completed', 'failed', 'successRate', 'score'];
+
 let failures = 0;
 const ok = (m) => console.log(`  ✓ ${m}`);
 const fail = (m) => {
@@ -172,6 +174,20 @@ try {
       'active',
       'explorerUrl',
     ]);
+
+    // Per-skill reputation: a filtered list carries the record in that skill,
+    // a profile carries every skill. The marketplace and profile render these.
+    const cap = agents[0].capabilities?.[0];
+    if (cap) {
+      const filtered = await get(`/v1/agents?limit=1&capability=${encodeURIComponent(cap)}`);
+      expectFields('/v1/agents?capability= skill', filtered.agents?.[0]?.skill, SKILL);
+    }
+    const profile = await get(`/v1/agents/${agents[0].agentId}`);
+    Array.isArray(profile.skills)
+      ? profile.skills.length > 0
+        ? expectFields('/v1/agents/:id skills[0]', profile.skills[0], SKILL)
+        : ok('/v1/agents/:id skills is an (empty) list')
+      : fail('/v1/agents/:id has no skills list');
   }
 
   // Run ids are unguessable uuids; a serial id must name nothing. If this
@@ -208,6 +224,18 @@ try {
     Array.isArray(parsed.events) && parsed.events.every((e) => typeof e.kind === 'string')
       ? ok('/v1/runs/:id events all carry a kind the page can switch on')
       : fail('/v1/runs/:id returned an event with no kind');
+
+    // The run record proves each settled step's review from its job's events.
+    const step = parsed.steps?.find((st) => st.status === 'settled' && st.jobId);
+    if (step) {
+      typeof step.agentId === 'number'
+        ? ok('/v1/runs/:id settled step names its worker agentId')
+        : fail('/v1/runs/:id settled step has no agentId');
+      const job = await get(`/v1/jobs/${encodeURIComponent(step.jobId)}`);
+      Array.isArray(job.events) && job.events.every((e) => typeof e.kind === 'string' && 'explorerUrl' in e)
+        ? ok('/v1/jobs/:id events carry kind and explorerUrl')
+        : fail('/v1/jobs/:id events lack kind or explorerUrl');
+    }
   }
 } catch (err) {
   fail(`could not check the contract: ${err.message}`);

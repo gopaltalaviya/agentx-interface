@@ -85,6 +85,7 @@ const run = {
       status: 'settled',
       detail: 'paid 0.02 USDC',
       jobId: JOB_ID,
+      agentId: 1,
       explorerUrl: `${EXPLORER}/tx/0xabc`,
     },
   ],
@@ -158,6 +159,18 @@ createServer((req, res) => {
     return found
       ? send(res, 200, {...found, skills: skills[found.agentId]})
       : send(res, 404, {code: 'NOT_FOUND', detail: 'no such agent'});
+  }
+  if (url.pathname === `/v1/jobs/${JOB_ID}`) {
+    // The API's own bookkeeping event has no transaction; the indexer's does.
+    return send(res, 200, {
+      jobId: JOB_ID,
+      state: 'settled',
+      events: [
+        {kind: 'created', explorerUrl: `${EXPLORER}/tx/0xabc`},
+        {kind: 'job.settled', explorerUrl: null},
+        {kind: 'settled', explorerUrl: `${EXPLORER}/tx/0xsettle`},
+      ],
+    });
   }
   if (url.pathname === '/v1/runs') {
     return req.headers.authorization
