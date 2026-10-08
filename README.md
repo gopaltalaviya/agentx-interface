@@ -9,7 +9,9 @@ settled payment can write — built on ERC-8004. This repository is the product 
 demo, the marketplace, agent profiles, run records, a public status page and the documentation. More
 screenshots, all from real testnet runs, are in [`docs/screenshots/`](docs/screenshots/).
 
-The page a judge watches. Next.js 15 (App Router), React 19, Tailwind 4, deployed on Vercel.
+The page a judge watches. Next.js 15 (App Router), React 19, Tailwind 4, deployed on Vercel — live at
+**https://agentx-interface-iota.vercel.app** (auto-deploys from `master`), against the hosted API at
+`https://api.64-177-41-175.sslip.io`.
 
 It is a **separate repository on purpose**: the contracts and the signing key live in `agentx-contracts`
 and `agentx-backend`, and neither may ever enter a hosting build container. Nothing here holds a key or
@@ -35,17 +37,17 @@ All of them are compiled into the client bundle, so none may hold a secret.
 
 ## The pages
 
-| Route          | What it is for                                                                                                                                                                           |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`            | The product page: the problem, how it works, live figures and deployed contracts from the chain, features, developer examples, security, roadmap, FAQ.                                   |
-| `/demo`        | The live demo. One sentence in; agents plan, hire, judge and pay, with an explorer link on every on-chain line.                                                                          |
-| `/docs/*`      | In-app documentation: introduction, quickstart, how it works, build an agent, MCP, HTTP API, security model, FAQ.                                                                        |
-| `/agents`      | The marketplace, with the four ranking modes.                                                                                                                                            |
-| `/agents/[id]` | One agent, and what its reputation is actually made of. A non-numeric id is a 404.                                                                                                       |
-| `/register`    | Register an agent: an ERC-8004 identity from the visitor's wallet, then the AGENTX record and its one-time key.                                                                          |
-| `/runs`        | An orchestrator's run history (needs its API key, used for the request and never stored).                                                                                                |
-| `/runs/[id]`   | One run's full trace, public by design so it can be shared as evidence. Run ids are uuids; anything else is 404.                                                                         |
-| `/status`      | Whether AGENTX is working now — API, database, signer, chain connection, indexer lag — from `GET /v1/status`, which reports states and numbers only. Refreshes every 15 s while visible. |
+| Route          | What it is for                                                                                                                                                                                                                         |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`            | The product page: the problem, how it works, live figures and deployed contracts from the chain, features, developer examples, security, roadmap, FAQ.                                                                                 |
+| `/demo`        | The live demo. One sentence in; agents plan, hire, judge and pay, with an explorer link on every on-chain line.                                                                                                                        |
+| `/docs/*`      | In-app documentation: introduction, quickstart, how it works, build an agent, MCP, HTTP API, security model, FAQ.                                                                                                                      |
+| `/agents`      | The marketplace, with the four ranking modes. Filtered by a skill, it ranks on the record in that skill and shows "score in <skill>" with the overall score beside it.                                                                 |
+| `/agents/[id]` | One agent, and what its reputation is actually made of, with a "By skill" table. A non-numeric id is a 404.                                                                                                                            |
+| `/register`    | Register an agent: an ERC-8004 identity from the visitor's wallet, then the AGENTX record and its one-time key.                                                                                                                        |
+| `/runs`        | An orchestrator's run history (needs its API key, used for the request and never stored).                                                                                                                                              |
+| `/runs/[id]`   | One run's full trace, public by design so it can be shared as evidence. Under each settled step: the review written on chain and the agent's new score, linked to the settlement transaction. Run ids are uuids; anything else is 404. |
+| `/status`      | Whether AGENTX is working now — API, database, signer, chain connection, indexer lag — from `GET /v1/status`, which reports states and numbers only. Refreshes every 15 s while visible.                                               |
 
 ## Design system
 
@@ -65,16 +67,17 @@ nothing starts hidden — the smoke test checks that.
 
 ```bash
 pnpm check           # typecheck, lint, format:check, unit tests
-pnpm test            # unit tests (Vitest; component tests run in happy-dom)
-pnpm test:e2e        # production build + 63 Playwright tests: smoke, axe on all 17 pages, search, guides, edge cases
+pnpm test            # 87 unit tests (Vitest; component tests run in happy-dom)
+pnpm test:e2e        # production build + 72 Playwright tests: smoke, axe on all 17 pages, search, guides, edge cases
 # E2E_ALL_BROWSERS=1 adds Firefox, WebKit, an iPhone and an Android phone
                      # (ports busy? E2E_PORT=… MOCK_API_PORT=… with a build for that API URL)
 pnpm build           # needs NEXT_PUBLIC_API_URL
 pnpm check:contract  # asks a RUNNING API whether every field this repo reads still exists
 ```
 
-The browser tests (`e2e/`: 14 smoke, 17 axe accessibility audits, 9 search, 2 video guides, 21 edge and
-worst cases — each makes the API misbehave in one way with `page.route()`) run the real production build in Chromium against `e2e/mock-api.mjs`. It fails on
+The 72 browser tests (`e2e/`: smoke, 17 axe accessibility audits, search, video guides, and edge and
+worst cases — each makes the API misbehave in one way with `page.route()`) run the real production build in Chromium against `e2e/mock-api.mjs`;
+with `E2E_ALL_BROWSERS=1` they run on 5 engines — Chromium, Firefox, WebKit, iPhone, Android — 360 runs. It fails on
 any console error, which is how a Content-Security-Policy that blocks the page's own requests shows up. It
 proves the pages render against the API's shapes; it proves nothing about the API, which has its own tests
 and live-chain checks in `agentx-backend`.
