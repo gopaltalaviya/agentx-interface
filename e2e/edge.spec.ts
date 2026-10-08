@@ -573,3 +573,111 @@ test('an orchestrator over its daily run cap is told so in words, and nothing st
   await expect(page.getByRole('list', {name: 'Run trace'})).toHaveCount(0);
   await expect(page.getByRole('button', {name: 'Run', exact: true})).toBeEnabled();
 });
+
+// ── The AI model out of its free quota ─────────────────────────────────────
+// A judge must not mistake "the demo's free AI key is used up" for "AGENTX is
+// broken": say so before the run, and name it after one.
+const LIMITED = {
+  state: 'limited',
+  since: new Date(Date.now() - 20 * 60_000).toISOString(),
+  detail: 'AI model unavailable: its free request quota is used up for now',
+  lastDelivered: {
+    runId: '11111111-2222-4333-8444-555555555555',
+    at: new Date(Date.now() - 3_600_000).toISOString(),
+  },
+};
+const statusWith = (model: unknown) => ({
+  status: 'operational',
+  checkedAt: new Date().toISOString(),
+  build: null,
+  components: {api: 'up', database: 'up', signer: 'up', rpc: 'up', indexer: 'up'},
+  chains: [],
+  model,
+});
+
+test('when the AI model is out of quota, the demo says so before Run — and that AGENTX works', async ({
+  page,
+}) => {
+  await page.route('**/v1/status', (route) => json(route, 200, statusWith(LIMITED)));
+  await page.goto('/demo');
+  const notice = page.getByRole('status').filter({hasText: 'free daily quota'});
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText('AGENTX itself is working');
+  await expect(notice.getByRole('link', {name: 'See the last run that delivered'})).toHaveAttribute(
+    'href',
+    `/runs/${LIMITED.lastDelivered.runId}`,
+  );
+  await expect(notice.getByRole('link', {name: /Watch a recorded live run/})).toHaveAttribute(
+    'href',
+    'https://youtu.be/IQESfGqXn1M',
+  );
+});
+
+test('no quota notice when the model is fine', async ({page}) => {
+  await page.route('**/v1/status', (route) =>
+    json(route, 200, statusWith({...LIMITED, state: 'ok', since: null, detail: null})),
+  );
+  await page.goto('/demo');
+  await expect(page.getByLabel('Orchestrator API key')).toBeVisible();
+  await expect(page.getByText('free daily quota')).toHaveCount(0);
+});
+
+test('a run stopped by the AI model is named as that, not as a broken run', async ({page}) => {
+  const reason = 'No plan: AI model unavailable: its free request quota is used up for now';
+  await page.route('**/v1/status', (route) => json(route, 200, statusWith(LIMITED)));
+  await page.route('**/v1/runs', (route) =>
+    route.request().method() === 'POST'
+      ? json(route, 202, {runId: NEW_RUN, eventsUrl: `/v1/runs/${NEW_RUN}/events`})
+      : route.fallback(),
+  );
+  await page.route(`**/v1/runs/${NEW_RUN}/events`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      headers: {'access-control-allow-origin': '*'},
+      body: `event: failed\ndata: ${JSON.stringify({detail: reason, spent: '0'})}\n\n`,
+    }),
+  );
+  await page.route(`**/v1/runs/${NEW_RUN}`, (route) =>
+    json(route, 200, {
+      runId: NEW_RUN,
+      chainId: 10143,
+      network: 'Monad Testnet',
+      testnet: true,
+      goal: 'g',
+      state: 'failed',
+      spent: '0',
+      spentDisplay: '0 USDC',
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      answer: null,
+      error: reason,
+      steps: [],
+      events: [],
+    }),
+  );
+  await page.goto('/demo');
+  await page.getByLabel('Orchestrator API key').fill(KEY);
+  await page.getByRole('button', {name: 'Run', exact: true}).click();
+  const notice = page.getByRole('alert').filter({hasText: 'The AI model was unavailable'});
+  await expect(notice).toBeVisible({timeout: 10_000});
+  await expect(notice).toContainText('this is not a protocol failure');
+  await expect(notice).toContainText('none was paid for');
+  await expect(page.getByText('The run did not deliver')).toHaveCount(0);
+
+  // The record page says the same.
+  await page.goto(`/runs/${NEW_RUN}`);
+  await expect(
+    page.getByText('The AI model was unavailable — this is not a protocol failure.'),
+  ).toBeVisible();
+  await expect(page.getByText('The run failed', {exact: true})).toHaveCount(0);
+});
+
+test('the status page shows the AI model apart from the protocol', async ({page}) => {
+  await page.route('**/v1/status', (route) => json(route, 200, statusWith(LIMITED)));
+  await page.goto('/status');
+  const card = page.getByRole('region', {name: 'AI model'});
+  await expect(card).toContainText('daily quota used up');
+  await expect(card).toContainText('Escrow, settlement and reputation do not depend on it');
+  await expect(page.getByText(/All systems operational|operational/i).first()).toBeVisible();
+});

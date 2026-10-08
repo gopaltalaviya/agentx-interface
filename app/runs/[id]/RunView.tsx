@@ -9,6 +9,7 @@ import {Card} from '@/components/ui/Card';
 import {CopyButton} from '@/components/ui/CopyButton';
 import {Icon} from '@/components/ui/Icon';
 import {PageHeader} from '@/components/ui/PageHeader';
+import {ModelFailureNotice, isModelFailure} from '@/components/ModelNotice';
 import {ErrorState, Loading, Skeleton} from '@/components/ui/States';
 import {ApiError, api, type RunDetail, type RunEvent} from '@/lib/api';
 import {duration} from '@/lib/format';
@@ -170,7 +171,8 @@ export function RunView({runId}: {runId: string}) {
         </Card>
       )}
 
-      {run.error && <ErrorState title="The run failed">{run.error}</ErrorState>}
+      {run.error && isModelFailure(run.error) && <ModelFailureNotice error={run.error} />}
+      {run.error && !isModelFailure(run.error) && <ErrorState title="The run failed">{run.error}</ErrorState>}
 
       {run.steps.length > 0 && (
         <Card

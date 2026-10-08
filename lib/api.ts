@@ -204,8 +204,17 @@ export interface RegisteredAgent {
  */
 export type ComponentStatus = 'up' | 'degraded' | 'down' | 'unknown';
 
+/** The AI model the hosted runs think with, from real run outcomes. Older APIs omit it. */
+export interface ModelStatus {
+  state: 'ok' | 'limited' | 'unknown';
+  since: string | null;
+  detail: string | null;
+  lastDelivered: {runId: string; at: string} | null;
+}
+
 export interface StatusReport {
   status: 'operational' | 'degraded' | 'down';
+  model?: ModelStatus;
   checkedAt: string;
   build: {service: string; version: string; commit: string; builtAt: string | null} | null;
   components: {

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import {useCallback, useEffect, useId, useRef, useState} from 'react';
 import {RunTrace, type TraceToken} from '@/components/RunTrace';
+import {ModelFailureNotice, ModelLimitedNotice, isModelFailure} from '@/components/ModelNotice';
 import {StepList} from '@/components/StepList';
 import {Badge} from '@/components/ui/Badge';
 import {Button, ButtonLink} from '@/components/ui/Button';
@@ -18,6 +19,7 @@ import {
   formatUnits,
   subscribeToRun,
   type AgentSummary,
+  type ModelStatus,
   type NetworkInfo,
   type RunDetail,
   type RunEvent,
@@ -94,6 +96,7 @@ export default function DemoPage() {
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<RunDetail | null>(null);
   const [network, setNetwork] = useState<NetworkInfo | null>(null);
+  const [model, setModel] = useState<ModelStatus | null>(null);
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
   const token: TraceToken | null = network?.paymentToken ?? null;
   const ids = {goal: useId(), key: useId(), keyNote: useId()};
@@ -113,6 +116,12 @@ export default function DemoPage() {
     api
       .agents({rank: 'balanced', limit: 50}, controller.signal)
       .then(setAgents)
+      .catch(() => undefined);
+    // Whether the AI model is out of its free quota right now, so a judge is
+    // told before pressing Run rather than after a failed run.
+    api
+      .status(controller.signal)
+      .then((s) => setModel(s.model ?? null))
       .catch(() => undefined);
     return () => controller.abort();
   }, []);
@@ -250,6 +259,7 @@ export default function DemoPage() {
       </section>
 
       {/* ── Console ──────────────────────────────────────────────────────── */}
+      {model?.state === 'limited' && !runId && <ModelLimitedNotice model={model} />}
       <Reveal>
         <Card className="relative overflow-hidden p-0">
           <div
@@ -406,7 +416,10 @@ export default function DemoPage() {
               </span>
             </div>
             <Progress phase={phase} running={running} failed={failed} />
-            {finished && failed && (
+            {finished && failed && isModelFailure(failure) && (
+              <ModelFailureNotice error={failure!} lastDelivered={model?.lastDelivered ?? null} />
+            )}
+            {finished && failed && !isModelFailure(failure) && (
               <ErrorState title="The run did not deliver">
                 {failure ?? 'No agent delivered a result. The steps below say why.'}
               </ErrorState>

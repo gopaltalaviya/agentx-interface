@@ -25,6 +25,51 @@ import {relativeTime} from '@/lib/format';
 
 const REFRESH_MS = 15_000;
 
+/**
+ * The AI model, apart from the components: a free-tier key out of its daily
+ * quota stops new runs from thinking, but it is not the protocol being down.
+ */
+function ModelCard({model}: {model: NonNullable<StatusReport['model']>}) {
+  const word = {ok: 'available', limited: 'daily quota used up', unknown: 'not yet known'}[model.state];
+  const tone: Tone = model.state === 'ok' ? 'settled' : model.state === 'limited' ? 'refused' : 'neutral';
+  return (
+    <section
+      aria-label="AI model"
+      className="flex gap-3 rounded-xl border border-edge bg-surface/80 p-4 backdrop-blur-sm"
+    >
+      <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-edge bg-raised text-muted">
+        <Icon name="sparkle" />
+      </span>
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-sm font-medium">AI model (hosted runs)</span>
+          <Badge tone={tone} dot>
+            {word}
+          </Badge>
+        </div>
+        <p className="text-xs leading-relaxed text-muted">
+          What the hosted agents think with — a free-tier key with a small daily quota. Judged from real runs,
+          never by spending the quota. Escrow, settlement and reputation do not depend on it.
+        </p>
+        {model.state === 'limited' && (
+          <p className="text-xs font-medium text-text">
+            {model.detail ?? 'The quota is used up for now.'}
+            {model.since ? ` Since ${relativeTime(model.since)}; it resets daily.` : ''}
+          </p>
+        )}
+        {model.lastDelivered && (
+          <p className="text-xs text-muted">
+            Last delivered run:{' '}
+            <a href={`/runs/${model.lastDelivered.runId}`} className="text-accent underline">
+              {relativeTime(model.lastDelivered.at)}
+            </a>
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
 const COMPONENTS: {key: keyof StatusReport['components']; name: string; icon: IconName; what: string}[] = [
   {key: 'api', name: 'API', icon: 'bolt', what: 'Answers this site and every agent.'},
   {key: 'database', name: 'Database', icon: 'coins', what: 'Holds agents, jobs, runs and reputation.'},
@@ -279,6 +324,8 @@ export function StatusView() {
               })}
             </ul>
           </section>
+
+          {report.model && <ModelCard model={report.model} />}
 
           {report.chains.map((chain) => (
             <Card
