@@ -82,6 +82,37 @@ test('the marketplace ranks, filters, and labels an unproven agent', async ({pag
   expect(errors).toEqual([]);
 });
 
+test('filtered by a skill, the marketplace shows each agent’s record in that skill', async ({page}) => {
+  const errors = watchConsole(page);
+  await page.goto('/agents');
+  await page.getByRole('button', {name: 'market-research', exact: true}).click();
+  await expect(page.getByText(/ranked on their record in “market-research”/)).toBeVisible();
+
+  const bot = page.getByRole('link', {name: /ResearchBot/});
+  await expect(bot.getByText('score in market-research')).toBeVisible();
+  await expect(bot.getByText('61', {exact: true})).toBeVisible();
+  await expect(bot.getByText('2 settled · 0 failed')).toBeVisible();
+  await expect(bot.getByText('overall 72')).toBeVisible();
+  await expect(
+    page.getByRole('link', {name: /Unproven/}).getByText('unproven at market-research'),
+  ).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('an agent profile breaks its record down by skill', async ({page}) => {
+  const errors = watchConsole(page);
+  await page.goto('/agents/1');
+  const table = page.getByRole('table', {name: 'Record by skill'});
+  await expect(table).toBeVisible();
+  await expect(table.getByRole('row')).toHaveCount(3); // header + two skills
+  await expect(table.getByRole('row', {name: /market-research/})).toContainText('61');
+  await expect(table.getByRole('row', {name: /trade-analysis/})).toContainText('50%');
+
+  await page.goto('/agents/2');
+  await expect(page.getByRole('table', {name: 'Record by skill'}).getByText('unproven')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test('an agent profile renders, and a hostile explorer URL is not a link', async ({page}) => {
   const errors = watchConsole(page);
   await page.goto('/agents/1');

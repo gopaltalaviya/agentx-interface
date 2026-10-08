@@ -53,6 +53,19 @@ const agents = [
   agent(2, 'Unproven', {completed: 0, failed: 0, score: 50, successRate: null, explorerUrl: HOSTILE}),
 ];
 
+/** Reputation per skill. ResearchBot's record in research differs from its overall one. */
+const skill = (capability, completed, failed, score) => ({
+  capability,
+  completed,
+  failed,
+  successRate: completed + failed === 0 ? null : completed / (completed + failed),
+  score,
+});
+const skills = {
+  1: [skill('market-research', 2, 0, 61), skill('trade-analysis', 1, 1, 50)],
+  2: [skill('market-research', 0, 0, 50)],
+};
+
 const run = {
   runId: RUN_ID,
   chainId: 10143,
@@ -132,12 +145,19 @@ createServer((req, res) => {
   if (url.pathname === '/v1/status') return send(res, 200, status());
   if (url.pathname === '/v1/agents') {
     const capability = url.searchParams.get('capability');
-    return send(res, 200, {agents: capability && capability !== 'market-research' ? [] : agents});
+    if (!capability) return send(res, 200, {agents});
+    if (capability !== 'market-research') return send(res, 200, {agents: []});
+    // Filtered by a skill, as the API does: each agent carries its record in it.
+    return send(res, 200, {
+      agents: agents.map((a) => ({...a, skill: skills[a.agentId].find((s) => s.capability === capability)})),
+    });
   }
   const agentMatch = /^\/v1\/agents\/(\d+)$/.exec(url.pathname);
   if (agentMatch) {
     const found = agents.find((a) => a.agentId === Number(agentMatch[1]));
-    return found ? send(res, 200, found) : send(res, 404, {code: 'NOT_FOUND', detail: 'no such agent'});
+    return found
+      ? send(res, 200, {...found, skills: skills[found.agentId]})
+      : send(res, 404, {code: 'NOT_FOUND', detail: 'no such agent'});
   }
   if (url.pathname === '/v1/runs') {
     return req.headers.authorization

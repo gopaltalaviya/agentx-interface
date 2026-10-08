@@ -10,7 +10,7 @@ import {Monogram} from '@/components/ui/Monogram';
 import {CountUp} from '@/components/ui/Motion';
 import {PageHeader} from '@/components/ui/PageHeader';
 import {ErrorState, Loading, Skeleton} from '@/components/ui/States';
-import {ApiError, api, type AgentSummary, type NetworkInfo} from '@/lib/api';
+import {ApiError, api, type AgentSummary, type NetworkInfo, type SkillStat} from '@/lib/api';
 import {safeHref} from '@/lib/links';
 
 /**
@@ -197,6 +197,8 @@ export function AgentView({agentId}: {agentId: number}) {
         </Card>
       </div>
 
+      {agent.skills && agent.skills.length > 0 && <SkillTable skills={agent.skills} />}
+
       <Card title="On-chain">
         <dl className="divide-y divide-edge text-sm">
           <div className="flex flex-col gap-1 py-3 first:pt-0 sm:flex-row sm:items-center sm:gap-3">
@@ -246,6 +248,66 @@ export function AgentView({agentId}: {agentId: number}) {
         </dl>
       </Card>
     </div>
+  );
+}
+
+/**
+ * The record skill by skill. Hiring is by skill, so this is the figure that
+ * decides whether the agent is chosen for a job — not the overall score.
+ */
+function SkillTable({skills}: {skills: SkillStat[]}) {
+  return (
+    <Card title="By skill">
+      <p className="mb-3 text-sm leading-relaxed text-muted">
+        When a job asks for a skill, the marketplace and the orchestrator rank on the record in that skill
+        alone, counted from the same settled payments.
+      </p>
+      <div className="overflow-x-auto">
+        <table aria-label="Record by skill" className="w-full text-left text-sm">
+          <thead className="text-[11px] uppercase tracking-wider text-muted">
+            <tr>
+              <th scope="col" className="py-2 pr-4 font-medium">
+                Skill
+              </th>
+              <th scope="col" className="py-2 pr-4 text-right font-medium">
+                Settled
+              </th>
+              <th scope="col" className="py-2 pr-4 text-right font-medium">
+                Failed
+              </th>
+              <th scope="col" className="py-2 pr-4 text-right font-medium">
+                Success
+              </th>
+              <th scope="col" className="py-2 text-right font-medium">
+                Score
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-edge">
+            {skills.map((s) => {
+              const unproven = s.completed + s.failed === 0;
+              return (
+                <tr key={s.capability}>
+                  <th scope="row" className="py-2 pr-4 font-normal">
+                    <Tag>{s.capability}</Tag>
+                  </th>
+                  <td className="tabular py-2 pr-4 text-right">{s.completed}</td>
+                  <td className={`tabular py-2 pr-4 text-right ${s.failed > 0 ? 'text-refused' : ''}`}>
+                    {s.failed}
+                  </td>
+                  <td className="tabular py-2 pr-4 text-right">
+                    {s.successRate === null ? '—' : `${Math.round(s.successRate * 100)}%`}
+                  </td>
+                  <td className="tabular py-2 text-right">
+                    {unproven ? <span className="text-muted">unproven</span> : <strong>{s.score}</strong>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }
 

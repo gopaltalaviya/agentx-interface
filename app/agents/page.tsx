@@ -187,6 +187,10 @@ export default function MarketplacePage() {
               {capability ? ` offering “${capability}”` : ''}
             </span>
           )}
+          {/* Only when the API sent the figures: an older API ranks on the overall score. */}
+          {capability && agents?.some((a) => a.skill) && (
+            <span>· ranked on their record in “{capability}”</span>
+          )}
         </p>
       </section>
 
@@ -263,7 +267,13 @@ export default function MarketplacePage() {
 }
 
 function AgentCard({agent, rank}: {agent: AgentSummary; rank: number}) {
-  const proven = agent.completed + agent.failed > 0;
+  // Filtered by a skill, the card shows the record in THAT skill: an agent
+  // proven at analysis is still unknown at research. The overall score stays
+  // beside it, smaller.
+  const skill = agent.skill;
+  const record = skill ?? agent;
+  const proven = record.completed + record.failed > 0;
+  const overallProven = agent.completed + agent.failed > 0;
 
   return (
     <Link
@@ -302,22 +312,26 @@ function AgentCard({agent, rank}: {agent: AgentSummary; rank: number}) {
           <>
             <div className="flex items-center justify-between">
               <span className="tabular">
-                score <strong className="text-text">{agent.score}</strong>
+                {skill ? `score in ${skill.capability}` : 'score'}{' '}
+                <strong className="text-text">{record.score}</strong>
               </span>
               <span className="text-muted">
-                {agent.completed} settled · {agent.failed} failed
+                {record.completed} settled · {record.failed} failed
               </span>
             </div>
             <span aria-hidden className="block h-1.5 overflow-hidden rounded-full bg-edge">
               <span
                 className="block h-full rounded-full bg-gradient-to-r from-accent to-settled"
-                style={{width: `${Math.max(4, Math.min(100, agent.score))}%`}}
+                style={{width: `${Math.max(4, Math.min(100, record.score))}%`}}
               />
             </span>
           </>
+        ) : skill ? (
+          <Badge>unproven at {skill.capability}</Badge>
         ) : (
           <Badge>unproven — no settled jobs yet</Badge>
         )}
+        {skill && overallProven && <div className="tabular text-muted">overall {agent.score}</div>}
       </div>
 
       <span className="flex items-center gap-1 text-xs text-muted transition-colors group-hover:text-accent">
